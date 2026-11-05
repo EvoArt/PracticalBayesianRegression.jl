@@ -104,7 +104,8 @@ turing_code(args...; kw...) = _codegen(:turing, args...; kw...).code
 
 PracticalBayes.jl `@model` source code for the model that `brm` fits. It
 works as [`turing_code`](@ref) does; only the package the code loads
-differs. [`pb_model`](@ref) evaluates it.
+differs. To run it, install PracticalBayes.jl, `include` the code and call
+the model function with the arguments from [`model_data`](@ref).
 """
 pb_code(args...; kw...) = _codegen(:pb, args...; kw...).code
 
@@ -134,17 +135,7 @@ no extra step is needed.
 """
 turing_model(args...; kw...) = _generated_model(:turing, "Turing", args...; kw...)
 
-"""
-    pb_model(formula, data; family, prior, ...) -> PracticalBayes.Model
-    pb_model(fit::BrmsFit)
-
-The generated PracticalBayes model ([`pb_code`](@ref)), evaluated and applied
-to its data. Needs `using PracticalBayes`. As for [`turing_model`](@ref),
-sample through `Base.invokelatest` inside a function.
-"""
-pb_model(args...; kw...) = _generated_model(:pb, "PracticalBayes", args...; kw...)
-
-# Defined by the Turing / PracticalBayes extensions:
+# Defined by the Turing extension:
 # (Val(backend), code body) -> the module the body was evaluated in
 function _eval_model_code end
 

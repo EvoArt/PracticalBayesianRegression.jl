@@ -51,8 +51,7 @@ chain = sample(m, NUTS(), MCMCThreads(), 1000, 4)
 ```
 
 To run the generated model unchanged, [`turing_model`](@ref) evaluates the
-code and applies it to the data in one step (and [`pb_model`](@ref) for
-PracticalBayes):
+code and applies it to the data in one step:
 
 ```julia
 using Turing

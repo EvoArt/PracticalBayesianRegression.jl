@@ -101,7 +101,7 @@ export ranef, group_coef, bayes_R2, loo, waic, loo_compare, LOOResult
 export hypothesis, HypothesisResult, conditional_effects
 export update, kfold, loo_R2, fitted_summary, predict_summary
 export pp_check, pp_check_data, plot_effects, trace_plot, residual_plot, to_inferencedata
-export turing_code, pb_code, model_data, turing_model, pb_model, ModelCode, model_logdensity, model_dimension, FamilyDist, thresholds, log_mixing_weights, residual_correlation
+export turing_code, pb_code, model_data, turing_model, ModelCode, model_logdensity, model_dimension, FamilyDist, thresholds, log_mixing_weights, residual_correlation
 export build_binary, model_recipe, assemble, read_csv, DataTable, ModelRecipe
 export get_prior, default_prior, validate_prior, PriorTable, VarCorr, loo_predict, loo_epred, loo_linpred
 export pp_mixture, prior_draws, nuts_params, log_posterior, rhat, neff_ratio, ndraws, nchains, niterations

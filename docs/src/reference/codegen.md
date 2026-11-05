@@ -11,7 +11,6 @@ turing_code
 pb_code
 model_data
 turing_model
-pb_model
 ModelCode
 model_logdensity
 model_dimension
