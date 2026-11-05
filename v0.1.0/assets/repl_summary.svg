@@ -1,0 +1,227 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="742" viewBox="0 0 800 742" role="img" aria-label="A fitted model printed in the Julia REPL">
+<rect width="800" height="742" rx="10" fill="#1e1e2e"/>
+<rect width="800" height="30" rx="10" fill="#2a2a3c"/><rect y="20" width="800" height="10" fill="#2a2a3c"/>
+<circle cx="20" cy="15.0" r="6" fill="#ff5f57"/>
+<circle cx="40" cy="15.0" r="6" fill="#febc2e"/>
+<circle cx="60" cy="15.0" r="6" fill="#28c840"/>
+<g font-family="'DejaVu Sans Mono', 'JuliaMono', Menlo, Consolas, monospace" font-size="14.0" xml:space="preserve">
+<text x="18.0" y="58.8" fill="#b4f0a8" font-weight="bold" textLength="50.4" lengthAdjust="spacingAndGlyphs">julia&gt;</text>
+<text x="76.8" y="58.8" fill="#d4d4d4" textLength="25.2" lengthAdjust="spacingAndGlyphs">fit</text>
+<text x="110.4" y="58.8" fill="#d4d4d4" textLength="8.4" lengthAdjust="spacingAndGlyphs">=</text>
+<text x="127.2" y="58.8" fill="#d4d4d4" textLength="134.4" lengthAdjust="spacingAndGlyphs">brm(@bf(reaction</text>
+<text x="270.0" y="58.8" fill="#d4d4d4" textLength="8.4" lengthAdjust="spacingAndGlyphs">~</text>
+<text x="286.8" y="58.8" fill="#d4d4d4" textLength="33.6" lengthAdjust="spacingAndGlyphs">days</text>
+<text x="328.8" y="58.8" fill="#d4d4d4" textLength="8.4" lengthAdjust="spacingAndGlyphs">+</text>
+<text x="345.6" y="58.8" fill="#d4d4d4" textLength="16.8" lengthAdjust="spacingAndGlyphs">(1</text>
+<text x="370.8" y="58.8" fill="#d4d4d4" textLength="8.4" lengthAdjust="spacingAndGlyphs">+</text>
+<text x="387.6" y="58.8" fill="#d4d4d4" textLength="33.6" lengthAdjust="spacingAndGlyphs">days</text>
+<text x="429.6" y="58.8" fill="#d4d4d4" textLength="8.4" lengthAdjust="spacingAndGlyphs">|</text>
+<text x="446.4" y="58.8" fill="#d4d4d4" textLength="75.6" lengthAdjust="spacingAndGlyphs">person)),</text>
+<text x="530.4" y="58.8" fill="#d4d4d4" textLength="50.4" lengthAdjust="spacingAndGlyphs">sleep;</text>
+<text x="589.2" y="58.8" fill="#d4d4d4" textLength="42.0" lengthAdjust="spacingAndGlyphs">delta</text>
+<text x="639.6" y="58.8" fill="#d4d4d4" textLength="8.4" lengthAdjust="spacingAndGlyphs">=</text>
+<text x="656.4" y="58.8" fill="#d4d4d4" textLength="42.0" lengthAdjust="spacingAndGlyphs">0.95)</text>
+<text x="34.8" y="96.8" fill="#8a8a8a" textLength="50.4" lengthAdjust="spacingAndGlyphs">Family</text>
+<text x="102.0" y="96.8" fill="#d4d4d4" font-weight="bold" textLength="67.2" lengthAdjust="spacingAndGlyphs">gaussian</text>
+<text x="43.2" y="115.8" fill="#8a8a8a" textLength="42.0" lengthAdjust="spacingAndGlyphs">Links</text>
+<text x="102.0" y="115.8" fill="#d4d4d4" textLength="16.8" lengthAdjust="spacingAndGlyphs">mu</text>
+<text x="127.2" y="115.8" fill="#d4d4d4" textLength="8.4" lengthAdjust="spacingAndGlyphs">=</text>
+<text x="144.0" y="115.8" fill="#d4d4d4" textLength="75.6" lengthAdjust="spacingAndGlyphs">identity;</text>
+<text x="228.0" y="115.8" fill="#d4d4d4" textLength="42.0" lengthAdjust="spacingAndGlyphs">sigma</text>
+<text x="278.4" y="115.8" fill="#d4d4d4" textLength="8.4" lengthAdjust="spacingAndGlyphs">=</text>
+<text x="295.2" y="115.8" fill="#d4d4d4" textLength="25.2" lengthAdjust="spacingAndGlyphs">log</text>
+<text x="26.4" y="134.8" fill="#8a8a8a" textLength="58.8" lengthAdjust="spacingAndGlyphs">Formula</text>
+<text x="102.0" y="134.8" fill="#d4d4d4" font-weight="bold" textLength="67.2" lengthAdjust="spacingAndGlyphs">reaction</text>
+<text x="177.6" y="134.8" fill="#8a8a8a" textLength="8.4" lengthAdjust="spacingAndGlyphs">~</text>
+<text x="194.4" y="134.8" fill="#d4d4d4" textLength="33.6" lengthAdjust="spacingAndGlyphs">days</text>
+<text x="236.4" y="134.8" fill="#8a8a8a" textLength="8.4" lengthAdjust="spacingAndGlyphs">+</text>
+<text x="253.2" y="134.8" fill="#d787d7" textLength="16.8" lengthAdjust="spacingAndGlyphs">(1</text>
+<text x="278.4" y="134.8" fill="#d787d7" textLength="8.4" lengthAdjust="spacingAndGlyphs">+</text>
+<text x="295.2" y="134.8" fill="#d787d7" textLength="33.6" lengthAdjust="spacingAndGlyphs">days</text>
+<text x="337.2" y="134.8" fill="#d787d7" textLength="8.4" lengthAdjust="spacingAndGlyphs">|</text>
+<text x="354.0" y="134.8" fill="#d787d7" textLength="58.8" lengthAdjust="spacingAndGlyphs">person)</text>
+<text x="51.6" y="153.8" fill="#8a8a8a" textLength="33.6" lengthAdjust="spacingAndGlyphs">Data</text>
+<text x="102.0" y="153.8" fill="#d4d4d4" textLength="25.2" lengthAdjust="spacingAndGlyphs">180</text>
+<text x="135.6" y="153.8" fill="#d4d4d4" textLength="100.8" lengthAdjust="spacingAndGlyphs">observations</text>
+<text x="43.2" y="172.8" fill="#8a8a8a" textLength="42.0" lengthAdjust="spacingAndGlyphs">Draws</text>
+<text x="102.0" y="172.8" fill="#d4d4d4" textLength="8.4" lengthAdjust="spacingAndGlyphs">4</text>
+<text x="118.8" y="172.8" fill="#d4d4d4" textLength="50.4" lengthAdjust="spacingAndGlyphs">chains</text>
+<text x="177.6" y="172.8" fill="#d4d4d4" textLength="8.4" lengthAdjust="spacingAndGlyphs">×</text>
+<text x="194.4" y="172.8" fill="#d4d4d4" textLength="33.6" lengthAdjust="spacingAndGlyphs">2000</text>
+<text x="236.4" y="172.8" fill="#d4d4d4" textLength="84.0" lengthAdjust="spacingAndGlyphs">iterations</text>
+<text x="328.8" y="172.8" fill="#8a8a8a" textLength="58.8" lengthAdjust="spacingAndGlyphs">(warmup</text>
+<text x="396.0" y="172.8" fill="#8a8a8a" textLength="42.0" lengthAdjust="spacingAndGlyphs">1000,</text>
+<text x="446.4" y="172.8" fill="#8a8a8a" textLength="33.6" lengthAdjust="spacingAndGlyphs">thin</text>
+<text x="488.4" y="172.8" fill="#8a8a8a" textLength="16.8" lengthAdjust="spacingAndGlyphs">1)</text>
+<text x="513.6" y="172.8" fill="#d4d4d4" textLength="8.4" lengthAdjust="spacingAndGlyphs">→</text>
+<text x="530.4" y="172.8" fill="#d4d4d4" textLength="33.6" lengthAdjust="spacingAndGlyphs">4000</text>
+<text x="572.4" y="172.8" fill="#d4d4d4" textLength="42.0" lengthAdjust="spacingAndGlyphs">draws</text>
+<text x="26.4" y="191.8" fill="#8a8a8a" textLength="58.8" lengthAdjust="spacingAndGlyphs">Sampler</text>
+<text x="102.0" y="191.8" fill="#d4d4d4" textLength="33.6" lengthAdjust="spacingAndGlyphs">nuts</text>
+<text x="144.0" y="191.8" fill="#8a8a8a" textLength="8.4" lengthAdjust="spacingAndGlyphs">·</text>
+<text x="160.8" y="191.8" fill="#8a8a8a" textLength="25.2" lengthAdjust="spacingAndGlyphs">1.1</text>
+<text x="194.4" y="191.8" fill="#8a8a8a" textLength="8.4" lengthAdjust="spacingAndGlyphs">s</text>
+<text x="211.2" y="191.8" fill="#8a8a8a" textLength="25.2" lengthAdjust="spacingAndGlyphs">per</text>
+<text x="244.8" y="191.8" fill="#8a8a8a" textLength="42.0" lengthAdjust="spacingAndGlyphs">chain</text>
+<text x="18.0" y="229.8" fill="#585858" textLength="16.8" lengthAdjust="spacingAndGlyphs">──</text>
+<text x="43.2" y="229.8" fill="#87d7ff" font-weight="bold" textLength="84.0" lengthAdjust="spacingAndGlyphs">Multilevel</text>
+<text x="135.6" y="229.8" fill="#87d7ff" font-weight="bold" textLength="126.0" lengthAdjust="spacingAndGlyphs">Hyperparameters</text>
+<text x="270.0" y="229.8" fill="#585858" textLength="512.4" lengthAdjust="spacingAndGlyphs">─────────────────────────────────────────────────────────────</text>
+<text x="18.0" y="248.8" fill="#d787d7" font-weight="bold" textLength="58.8" lengthAdjust="spacingAndGlyphs">~person</text>
+<text x="85.2" y="248.8" fill="#8a8a8a" textLength="58.8" lengthAdjust="spacingAndGlyphs">(Number</text>
+<text x="152.4" y="248.8" fill="#8a8a8a" textLength="16.8" lengthAdjust="spacingAndGlyphs">of</text>
+<text x="177.6" y="248.8" fill="#8a8a8a" textLength="58.8" lengthAdjust="spacingAndGlyphs">levels:</text>
+<text x="244.8" y="248.8" fill="#8a8a8a" textLength="25.2" lengthAdjust="spacingAndGlyphs">18)</text>
+<text x="18.0" y="267.8" fill="#585858" textLength="764.4" lengthAdjust="spacingAndGlyphs">╭─────────────────────┬───────────────────────────────────────────────────────────────────╮</text>
+<text x="18.0" y="286.8" fill="#585858" textLength="8.4" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="202.8" y="286.8" fill="#585858" textLength="8.4" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="219.6" y="286.8" fill="#d4d4d4" font-weight="bold" textLength="67.2" lengthAdjust="spacingAndGlyphs">Estimate</text>
+<text x="303.6" y="286.8" fill="#d4d4d4" font-weight="bold" textLength="75.6" lengthAdjust="spacingAndGlyphs">Est.Error</text>
+<text x="396.0" y="286.8" fill="#d4d4d4" font-weight="bold" textLength="42.0" lengthAdjust="spacingAndGlyphs">l-95%</text>
+<text x="446.4" y="286.8" fill="#d4d4d4" font-weight="bold" textLength="16.8" lengthAdjust="spacingAndGlyphs">CI</text>
+<text x="480.0" y="286.8" fill="#d4d4d4" font-weight="bold" textLength="42.0" lengthAdjust="spacingAndGlyphs">u-95%</text>
+<text x="530.4" y="286.8" fill="#d4d4d4" font-weight="bold" textLength="16.8" lengthAdjust="spacingAndGlyphs">CI</text>
+<text x="564.0" y="286.8" fill="#d4d4d4" font-weight="bold" textLength="33.6" lengthAdjust="spacingAndGlyphs">Rhat</text>
+<text x="614.4" y="286.8" fill="#d4d4d4" font-weight="bold" textLength="67.2" lengthAdjust="spacingAndGlyphs">Bulk_ESS</text>
+<text x="698.4" y="286.8" fill="#d4d4d4" font-weight="bold" textLength="67.2" lengthAdjust="spacingAndGlyphs">Tail_ESS</text>
+<text x="774.0" y="286.8" fill="#585858" textLength="8.4" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="18.0" y="305.8" fill="#585858" textLength="764.4" lengthAdjust="spacingAndGlyphs">├─────────────────────┼───────────────────────────────────────────────────────────────────┤</text>
+<text x="18.0" y="324.8" fill="#585858" textLength="8.4" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="85.2" y="324.8" fill="#d4d4d4" font-weight="bold" textLength="109.2" lengthAdjust="spacingAndGlyphs">sd(Intercept)</text>
+<text x="202.8" y="324.8" fill="#585858" textLength="8.4" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="244.8" y="324.8" fill="#d4d4d4" font-weight="bold" textLength="42.0" lengthAdjust="spacingAndGlyphs">31.84</text>
+<text x="345.6" y="324.8" fill="#d4d4d4" textLength="33.6" lengthAdjust="spacingAndGlyphs">6.86</text>
+<text x="421.2" y="324.8" fill="#d4d4d4" textLength="42.0" lengthAdjust="spacingAndGlyphs">20.87</text>
+<text x="505.2" y="324.8" fill="#d4d4d4" textLength="42.0" lengthAdjust="spacingAndGlyphs">47.53</text>
+<text x="564.0" y="324.8" fill="#d4d4d4" textLength="33.6" lengthAdjust="spacingAndGlyphs">1.00</text>
+<text x="648.0" y="324.8" fill="#d4d4d4" textLength="33.6" lengthAdjust="spacingAndGlyphs">1097</text>
+<text x="732.0" y="324.8" fill="#d4d4d4" textLength="33.6" lengthAdjust="spacingAndGlyphs">1391</text>
+<text x="774.0" y="324.8" fill="#585858" textLength="8.4" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="18.0" y="343.8" fill="#585858" textLength="8.4" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="127.2" y="343.8" fill="#d4d4d4" font-weight="bold" textLength="67.2" lengthAdjust="spacingAndGlyphs">sd(days)</text>
+<text x="202.8" y="343.8" fill="#585858" textLength="8.4" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="253.2" y="343.8" fill="#d4d4d4" font-weight="bold" textLength="33.6" lengthAdjust="spacingAndGlyphs">8.38</text>
+<text x="345.6" y="343.8" fill="#d4d4d4" textLength="33.6" lengthAdjust="spacingAndGlyphs">1.68</text>
+<text x="429.6" y="343.8" fill="#d4d4d4" textLength="33.6" lengthAdjust="spacingAndGlyphs">5.71</text>
+<text x="505.2" y="343.8" fill="#d4d4d4" textLength="42.0" lengthAdjust="spacingAndGlyphs">12.26</text>
+<text x="564.0" y="343.8" fill="#d4d4d4" textLength="33.6" lengthAdjust="spacingAndGlyphs">1.00</text>
+<text x="656.4" y="343.8" fill="#d4d4d4" textLength="25.2" lengthAdjust="spacingAndGlyphs">664</text>
+<text x="732.0" y="343.8" fill="#d4d4d4" textLength="33.6" lengthAdjust="spacingAndGlyphs">1540</text>
+<text x="774.0" y="343.8" fill="#585858" textLength="8.4" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="18.0" y="362.8" fill="#585858" textLength="8.4" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="34.8" y="362.8" fill="#d4d4d4" font-weight="bold" textLength="159.6" lengthAdjust="spacingAndGlyphs">cor(Intercept,days)</text>
+<text x="202.8" y="362.8" fill="#585858" textLength="8.4" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="244.8" y="362.8" fill="#ff875f" font-weight="bold" textLength="42.0" lengthAdjust="spacingAndGlyphs">-0.50</text>
+<text x="345.6" y="362.8" fill="#d4d4d4" textLength="33.6" lengthAdjust="spacingAndGlyphs">0.19</text>
+<text x="421.2" y="362.8" fill="#d4d4d4" textLength="42.0" lengthAdjust="spacingAndGlyphs">-0.80</text>
+<text x="505.2" y="362.8" fill="#d4d4d4" textLength="42.0" lengthAdjust="spacingAndGlyphs">-0.08</text>
+<text x="564.0" y="362.8" fill="#d4d4d4" textLength="33.6" lengthAdjust="spacingAndGlyphs">1.01</text>
+<text x="656.4" y="362.8" fill="#d4d4d4" textLength="25.2" lengthAdjust="spacingAndGlyphs">611</text>
+<text x="732.0" y="362.8" fill="#d4d4d4" textLength="33.6" lengthAdjust="spacingAndGlyphs">1619</text>
+<text x="774.0" y="362.8" fill="#585858" textLength="8.4" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="18.0" y="381.8" fill="#585858" textLength="764.4" lengthAdjust="spacingAndGlyphs">╰─────────────────────┴───────────────────────────────────────────────────────────────────╯</text>
+<text x="18.0" y="419.8" fill="#585858" textLength="16.8" lengthAdjust="spacingAndGlyphs">──</text>
+<text x="43.2" y="419.8" fill="#87d7ff" font-weight="bold" textLength="84.0" lengthAdjust="spacingAndGlyphs">Regression</text>
+<text x="135.6" y="419.8" fill="#87d7ff" font-weight="bold" textLength="100.8" lengthAdjust="spacingAndGlyphs">Coefficients</text>
+<text x="244.8" y="419.8" fill="#585858" textLength="453.6" lengthAdjust="spacingAndGlyphs">──────────────────────────────────────────────────────</text>
+<text x="18.0" y="438.8" fill="#585858" textLength="680.4" lengthAdjust="spacingAndGlyphs">╭───────────┬───────────────────────────────────────────────────────────────────╮</text>
+<text x="18.0" y="457.8" fill="#585858" textLength="8.4" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="118.8" y="457.8" fill="#585858" textLength="8.4" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="135.6" y="457.8" fill="#d4d4d4" font-weight="bold" textLength="67.2" lengthAdjust="spacingAndGlyphs">Estimate</text>
+<text x="219.6" y="457.8" fill="#d4d4d4" font-weight="bold" textLength="75.6" lengthAdjust="spacingAndGlyphs">Est.Error</text>
+<text x="312.0" y="457.8" fill="#d4d4d4" font-weight="bold" textLength="42.0" lengthAdjust="spacingAndGlyphs">l-95%</text>
+<text x="362.4" y="457.8" fill="#d4d4d4" font-weight="bold" textLength="16.8" lengthAdjust="spacingAndGlyphs">CI</text>
+<text x="396.0" y="457.8" fill="#d4d4d4" font-weight="bold" textLength="42.0" lengthAdjust="spacingAndGlyphs">u-95%</text>
+<text x="446.4" y="457.8" fill="#d4d4d4" font-weight="bold" textLength="16.8" lengthAdjust="spacingAndGlyphs">CI</text>
+<text x="480.0" y="457.8" fill="#d4d4d4" font-weight="bold" textLength="33.6" lengthAdjust="spacingAndGlyphs">Rhat</text>
+<text x="530.4" y="457.8" fill="#d4d4d4" font-weight="bold" textLength="67.2" lengthAdjust="spacingAndGlyphs">Bulk_ESS</text>
+<text x="614.4" y="457.8" fill="#d4d4d4" font-weight="bold" textLength="67.2" lengthAdjust="spacingAndGlyphs">Tail_ESS</text>
+<text x="690.0" y="457.8" fill="#585858" textLength="8.4" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="18.0" y="476.8" fill="#585858" textLength="680.4" lengthAdjust="spacingAndGlyphs">├───────────┼───────────────────────────────────────────────────────────────────┤</text>
+<text x="18.0" y="495.8" fill="#585858" textLength="8.4" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="34.8" y="495.8" fill="#d4d4d4" font-weight="bold" textLength="75.6" lengthAdjust="spacingAndGlyphs">Intercept</text>
+<text x="118.8" y="495.8" fill="#585858" textLength="8.4" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="152.4" y="495.8" fill="#d4d4d4" font-weight="bold" textLength="50.4" lengthAdjust="spacingAndGlyphs">250.59</text>
+<text x="261.6" y="495.8" fill="#d4d4d4" textLength="33.6" lengthAdjust="spacingAndGlyphs">8.60</text>
+<text x="328.8" y="495.8" fill="#d4d4d4" textLength="50.4" lengthAdjust="spacingAndGlyphs">232.93</text>
+<text x="412.8" y="495.8" fill="#d4d4d4" textLength="50.4" lengthAdjust="spacingAndGlyphs">267.42</text>
+<text x="480.0" y="495.8" fill="#d4d4d4" textLength="33.6" lengthAdjust="spacingAndGlyphs">1.01</text>
+<text x="572.4" y="495.8" fill="#d4d4d4" textLength="25.2" lengthAdjust="spacingAndGlyphs">688</text>
+<text x="648.0" y="495.8" fill="#d4d4d4" textLength="33.6" lengthAdjust="spacingAndGlyphs">1345</text>
+<text x="690.0" y="495.8" fill="#585858" textLength="8.4" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="18.0" y="514.8" fill="#585858" textLength="8.4" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="76.8" y="514.8" fill="#d4d4d4" font-weight="bold" textLength="33.6" lengthAdjust="spacingAndGlyphs">days</text>
+<text x="118.8" y="514.8" fill="#585858" textLength="8.4" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="160.8" y="514.8" fill="#5fafff" font-weight="bold" textLength="42.0" lengthAdjust="spacingAndGlyphs">10.32</text>
+<text x="261.6" y="514.8" fill="#d4d4d4" textLength="33.6" lengthAdjust="spacingAndGlyphs">2.17</text>
+<text x="345.6" y="514.8" fill="#d4d4d4" textLength="33.6" lengthAdjust="spacingAndGlyphs">5.94</text>
+<text x="421.2" y="514.8" fill="#d4d4d4" textLength="42.0" lengthAdjust="spacingAndGlyphs">14.68</text>
+<text x="480.0" y="514.8" fill="#d4d4d4" textLength="33.6" lengthAdjust="spacingAndGlyphs">1.00</text>
+<text x="572.4" y="514.8" fill="#d4d4d4" textLength="25.2" lengthAdjust="spacingAndGlyphs">719</text>
+<text x="648.0" y="514.8" fill="#d4d4d4" textLength="33.6" lengthAdjust="spacingAndGlyphs">1156</text>
+<text x="690.0" y="514.8" fill="#585858" textLength="8.4" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="18.0" y="533.8" fill="#585858" textLength="680.4" lengthAdjust="spacingAndGlyphs">╰───────────┴───────────────────────────────────────────────────────────────────╯</text>
+<text x="18.0" y="571.8" fill="#585858" textLength="16.8" lengthAdjust="spacingAndGlyphs">──</text>
+<text x="43.2" y="571.8" fill="#87d7ff" font-weight="bold" textLength="58.8" lengthAdjust="spacingAndGlyphs">Further</text>
+<text x="110.4" y="571.8" fill="#87d7ff" font-weight="bold" textLength="117.6" lengthAdjust="spacingAndGlyphs">Distributional</text>
+<text x="236.4" y="571.8" fill="#87d7ff" font-weight="bold" textLength="84.0" lengthAdjust="spacingAndGlyphs">Parameters</text>
+<text x="328.8" y="571.8" fill="#585858" textLength="453.6" lengthAdjust="spacingAndGlyphs">──────────────────────────────────────────────────────</text>
+<text x="18.0" y="590.8" fill="#585858" textLength="764.4" lengthAdjust="spacingAndGlyphs">╭───────┬─────────────────────────────────────────────────────────────────────────────────╮</text>
+<text x="18.0" y="609.8" fill="#585858" textLength="8.4" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="85.2" y="609.8" fill="#585858" textLength="8.4" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="102.0" y="609.8" fill="#d4d4d4" font-weight="bold" textLength="67.2" lengthAdjust="spacingAndGlyphs">Estimate</text>
+<text x="186.0" y="609.8" fill="#d4d4d4" font-weight="bold" textLength="75.6" lengthAdjust="spacingAndGlyphs">Est.Error</text>
+<text x="278.4" y="609.8" fill="#d4d4d4" font-weight="bold" textLength="42.0" lengthAdjust="spacingAndGlyphs">l-95%</text>
+<text x="328.8" y="609.8" fill="#d4d4d4" font-weight="bold" textLength="16.8" lengthAdjust="spacingAndGlyphs">CI</text>
+<text x="362.4" y="609.8" fill="#d4d4d4" font-weight="bold" textLength="42.0" lengthAdjust="spacingAndGlyphs">u-95%</text>
+<text x="412.8" y="609.8" fill="#d4d4d4" font-weight="bold" textLength="16.8" lengthAdjust="spacingAndGlyphs">CI</text>
+<text x="446.4" y="609.8" fill="#d4d4d4" font-weight="bold" textLength="33.6" lengthAdjust="spacingAndGlyphs">Rhat</text>
+<text x="496.8" y="609.8" fill="#d4d4d4" font-weight="bold" textLength="67.2" lengthAdjust="spacingAndGlyphs">Bulk_ESS</text>
+<text x="580.8" y="609.8" fill="#d4d4d4" font-weight="bold" textLength="67.2" lengthAdjust="spacingAndGlyphs">Tail_ESS</text>
+<text x="664.8" y="609.8" fill="#d4d4d4" font-weight="bold" textLength="75.6" lengthAdjust="spacingAndGlyphs">posterior</text>
+<text x="774.0" y="609.8" fill="#585858" textLength="8.4" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="18.0" y="628.8" fill="#585858" textLength="8.4" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="85.2" y="628.8" fill="#585858" textLength="8.4" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="664.8" y="628.8" fill="#6c7086" textLength="25.2" lengthAdjust="spacingAndGlyphs">own</text>
+<text x="698.4" y="628.8" fill="#6c7086" textLength="42.0" lengthAdjust="spacingAndGlyphs">scale</text>
+<text x="774.0" y="628.8" fill="#585858" textLength="8.4" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="18.0" y="647.8" fill="#585858" textLength="764.4" lengthAdjust="spacingAndGlyphs">├───────┼─────────────────────────────────────────────────────────────────────────────────┤</text>
+<text x="18.0" y="666.8" fill="#585858" textLength="8.4" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="34.8" y="666.8" fill="#d4d4d4" font-weight="bold" textLength="42.0" lengthAdjust="spacingAndGlyphs">sigma</text>
+<text x="85.2" y="666.8" fill="#585858" textLength="8.4" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="127.2" y="666.8" fill="#d4d4d4" font-weight="bold" textLength="42.0" lengthAdjust="spacingAndGlyphs">21.39</text>
+<text x="228.0" y="666.8" fill="#d4d4d4" textLength="33.6" lengthAdjust="spacingAndGlyphs">1.27</text>
+<text x="303.6" y="666.8" fill="#d4d4d4" textLength="42.0" lengthAdjust="spacingAndGlyphs">19.06</text>
+<text x="387.6" y="666.8" fill="#d4d4d4" textLength="42.0" lengthAdjust="spacingAndGlyphs">24.08</text>
+<text x="446.4" y="666.8" fill="#d4d4d4" textLength="33.6" lengthAdjust="spacingAndGlyphs">1.00</text>
+<text x="530.4" y="666.8" fill="#d4d4d4" textLength="33.6" lengthAdjust="spacingAndGlyphs">3009</text>
+<text x="614.4" y="666.8" fill="#d4d4d4" textLength="33.6" lengthAdjust="spacingAndGlyphs">2924</text>
+<text x="664.8" y="666.8" fill="#4e4e4e" textLength="8.4" lengthAdjust="spacingAndGlyphs">▂</text>
+<text x="673.2" y="666.8" fill="#87d7ff" textLength="75.6" lengthAdjust="spacingAndGlyphs">▃▄▇██▇▅▄▃</text>
+<text x="748.8" y="666.8" fill="#4e4e4e" textLength="16.8" lengthAdjust="spacingAndGlyphs">▂▁</text>
+<text x="774.0" y="666.8" fill="#585858" textLength="8.4" lengthAdjust="spacingAndGlyphs">│</text>
+<text x="18.0" y="685.8" fill="#585858" textLength="764.4" lengthAdjust="spacingAndGlyphs">╰───────┴─────────────────────────────────────────────────────────────────────────────────╯</text>
+<text x="26.4" y="723.8" fill="#87d787" textLength="8.4" lengthAdjust="spacingAndGlyphs">✓</text>
+<text x="43.2" y="723.8" fill="#d4d4d4" textLength="33.6" lengthAdjust="spacingAndGlyphs">Rhat</text>
+<text x="85.2" y="723.8" fill="#d4d4d4" textLength="8.4" lengthAdjust="spacingAndGlyphs">≤</text>
+<text x="102.0" y="723.8" fill="#d4d4d4" textLength="33.6" lengthAdjust="spacingAndGlyphs">1.01</text>
+<text x="152.4" y="723.8" fill="#585858" textLength="8.4" lengthAdjust="spacingAndGlyphs">·</text>
+<text x="177.6" y="723.8" fill="#87d787" textLength="8.4" lengthAdjust="spacingAndGlyphs">✓</text>
+<text x="194.4" y="723.8" fill="#d4d4d4" textLength="25.2" lengthAdjust="spacingAndGlyphs">ESS</text>
+<text x="228.0" y="723.8" fill="#d4d4d4" textLength="8.4" lengthAdjust="spacingAndGlyphs">≥</text>
+<text x="244.8" y="723.8" fill="#d4d4d4" textLength="25.2" lengthAdjust="spacingAndGlyphs">400</text>
+<text x="286.8" y="723.8" fill="#585858" textLength="8.4" lengthAdjust="spacingAndGlyphs">·</text>
+<text x="312.0" y="723.8" fill="#87d787" textLength="8.4" lengthAdjust="spacingAndGlyphs">✓</text>
+<text x="328.8" y="723.8" fill="#d4d4d4" textLength="16.8" lengthAdjust="spacingAndGlyphs">no</text>
+<text x="354.0" y="723.8" fill="#d4d4d4" textLength="92.4" lengthAdjust="spacingAndGlyphs">divergences</text>
+<text x="463.2" y="723.8" fill="#585858" textLength="8.4" lengthAdjust="spacingAndGlyphs">·</text>
+<text x="488.4" y="723.8" fill="#87d787" textLength="8.4" lengthAdjust="spacingAndGlyphs">✓</text>
+<text x="505.2" y="723.8" fill="#d4d4d4" textLength="75.6" lengthAdjust="spacingAndGlyphs">treedepth</text>
+<text x="589.2" y="723.8" fill="#d4d4d4" textLength="8.4" lengthAdjust="spacingAndGlyphs">&lt;</text>
+<text x="606.0" y="723.8" fill="#d4d4d4" textLength="16.8" lengthAdjust="spacingAndGlyphs">10</text>
+<text x="639.6" y="723.8" fill="#585858" textLength="8.4" lengthAdjust="spacingAndGlyphs">·</text>
+<text x="664.8" y="723.8" fill="#87d787" textLength="8.4" lengthAdjust="spacingAndGlyphs">✓</text>
+<text x="681.6" y="723.8" fill="#d4d4d4" textLength="50.4" lengthAdjust="spacingAndGlyphs">E-BFMI</text>
+<text x="740.4" y="723.8" fill="#d4d4d4" textLength="8.4" lengthAdjust="spacingAndGlyphs">≥</text>
+<text x="757.2" y="723.8" fill="#d4d4d4" textLength="25.2" lengthAdjust="spacingAndGlyphs">0.3</text>
+</g></svg>
