@@ -1,0 +1,20 @@
+# local working notes
+CLAUDE.md
+PARITY.md
+devlog.md
+plan.md
+notes/
+
+# environments
+Manifest.toml
+*/Manifest.toml
+
+# local benchmark and compilation scripts
+benchmarks/
+trimtest/
+*.jsonl
+
+# build artefacts
+docs/build/
+*.dll.a
+*.stackdump
