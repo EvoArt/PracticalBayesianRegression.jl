@@ -403,6 +403,9 @@ end
 # the prior on a parameter with support (lb, ub): truncated only where the
 # bound actually cuts the distribution's own support
 function _cg_dist(p::ScalarPrior, lb::Float64=p.lb, ub::Float64=Inf)
+    # constant() priors are written out where the generator knows the parameter
+    # (coefficients, scalar dpars); anywhere else the model uses the fallback
+    isconstant(p) && _cg_unsupported("constant() priors on this parameter class")
     if isflat(p)
         lb == -Inf && ub == Inf && return "Flat()"
         ub == Inf && return "FlatPos($(_cg_num(lb)))"
@@ -1470,6 +1473,18 @@ function _cg_rename(line::String, names::Vector{String}, sfx::String)
     return code * cmt
 end
 
+# the names a block of generated lines assigns (`x = ...`, `x ~ ...`, `x := ...`, `x[i] = ...`)
+function _cg_assigned(lines)
+    out = Set{String}()
+    for l in lines
+        k = findfirst('#', l)
+        code = k === nothing ? l : l[1:prevind(l, k)]
+        m = match(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*(?:\[[^\]]*\])?\s*(?::=|~|=(?!=))", code)
+        m === nothing || push!(out, m.captures[1])
+    end
+    return out
+end
+
 function _codegen_explicit(backend::Symbol, mv::MVDensity, infos; name::Symbol=:regression_model)
     mv.cross && _cg_unsupported("group-level IDs shared across responses")
     isempty(mv.marg) || _cg_unsupported("mi() predictors integrated out")
@@ -1485,7 +1500,11 @@ function _codegen_explicit(backend::Symbol, mv::MVDensity, infos; name::Symbol=:
         r = _cg_glm!(gk, sub, info_k; withlik=!mv.rescor)
         readable &= r.readable
         sfx = "_" * _cg_ident(mv.resp[k])
-        names = sort!(collect(union(Set(string.(first.(gk.args))), Set(string.(first.(gk.params))), gk.used));
+        # every name the response's code assigns is local to that response too
+        # (eta, b_Intercept, ...): with rescor the means are used after all the
+        # responses' code, so an unsuffixed `eta` would be the last response's
+        names = sort!(collect(union(Set(string.(first.(gk.args))), Set(string.(first.(gk.params))), gk.used,
+                                    _cg_assigned(gk.lines)));
                       by=length, rev=true)
         _cg_line!(g, "# ---- response $(mv.resp[k]) ----")
         append!(g.lines, (_cg_rename(l, names, sfx) for l in gk.lines))
