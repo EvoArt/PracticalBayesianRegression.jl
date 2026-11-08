@@ -1,7 +1,7 @@
 name = "PracticalBayesianRegression"
 uuid = "3622129f-02c2-4cbe-8b24-efc8a7759a86"
-authors = ["Arthur Newbury <arn203@exeter.ac.uk>"]
 version = "0.1.0"
+authors = ["Arthur Newbury <arn203@exeter.ac.uk>"]
 
 [deps]
 AbstractMCMC = "80f14c24-f653-4e6a-9b94-39d6b0f70001"
@@ -39,14 +39,13 @@ PracticalBayesianRegressionPlotlyLightExt = "PlotlyLight"
 PracticalBayesianRegressionTuringExt = "Turing"
 PracticalBayesianRegressionUnicodePlotsExt = "UnicodePlots"
 
-# FlexiChains 0.7 changed Extra keys to Symbol, which _make_chain does not handle.
 [compat]
 AbstractMCMC = "5"
 AdvancedHMC = "0.8"
 Crayons = "4"
 DataAPI = "1"
 Distributions = "0.25"
-FlexiChains = "0.6"
+FlexiChains = "0.6, 0.7"
 ForwardDiff = "1"
 InferenceObjects = "0.4"
 LogDensityProblems = "2"
