@@ -25,6 +25,7 @@ import SpecialFunctions
 import PSIS
 import StatsAPI
 import Serialization
+import TOML
 using PrettyTables: pretty_table, TextHighlighter, TextTableFormat, TextTableStyle, AnsiTextCell,
                     text_table_borders__unicode_rounded, fmt__printf
 using Printf: @sprintf
@@ -78,6 +79,7 @@ include("codegen.jl")
 include("csvio.jl")       # model binaries: CSV in / draws out
 include("recipe.jl")      # model structure without data; trimmable assembly
 include("binary.jl")      # build_binary and the executable's driver
+include("store.jl")       # the model store: compile_model, compiled_models, brm(::CompiledModel, data)
 
 export @bf, bf, @lf, lf, set_mecor, brm, build_model, sample_model, BrmsFit, BrmsFormula
 export set_rescor, MVFormula, BrmsMVFit, build_mv_model
@@ -103,6 +105,8 @@ export update, kfold, loo_R2, fitted_summary, predict_summary
 export pp_check, pp_check_data, plot_effects, trace_plot, residual_plot, to_inferencedata
 export turing_code, pb_code, model_data, turing_model, ModelCode, model_logdensity, model_dimension, FamilyDist, thresholds, log_mixing_weights, residual_correlation
 export build_binary, model_recipe, assemble, read_csv, DataTable, ModelRecipe
+export compile_model, compiled_model, compiled_models, find_compiled_model, remove_compiled_model, model_store
+export CompiledModel, ModelStore, run_compiled, fit_from_draws
 export get_prior, default_prior, validate_prior, PriorTable, VarCorr, loo_predict, loo_epred, loo_linpred
 export pp_mixture, prior_draws, nuts_params, log_posterior, rhat, neff_ratio, ndraws, nchains, niterations
 

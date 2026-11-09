@@ -284,6 +284,16 @@ remember their arguments.
 function update(fit::BrmsFit; newdata=nothing, formula=nothing, kwargs...)
     isempty(fit.call) && throw(ArgumentError("this fit was not made by `brm`; refit it directly"))
     c = copy(fit.call)
+    cm = pop!(c, :compiled, nothing)
+    # a compiled model's fit: new data or sampler settings rerun its binary
+    # (no compilation); anything else (formula, family, prior) refits with brm
+    if cm !== nothing && formula === nothing && all(k -> k in _COMPILED_RUN_KW, keys(kwargs))
+        kw = Dict{Symbol,Any}(k => c[k] for k in _COMPILED_RUN_KW if haskey(c, k))
+        for (k, v) in kwargs
+            kw[k] = v
+        end
+        return brm(cm, newdata === nothing ? c[:data] : newdata; kw...)
+    end
     f = formula === nothing ? pop!(c, :formula) : (pop!(c, :formula); formula)
     d = newdata === nothing ? pop!(c, :data) : (pop!(c, :data); newdata)
     for (k, v) in kwargs

@@ -115,21 +115,31 @@ function parse_csv(text::String; delim::Char=',')
 end
 
 """
-    write_draws_csv(io, names, draws)
+    write_draws_csv(io, names, draws[, statnames, stats])
 
 `draws` is (iterations x chains x variables) on the constrained scale; one row
-per draw, chains stacked, with `chain` and `iteration` columns first.
+per draw, chains stacked, with `chain` and `iteration` columns first, then the
+sampler statistics `stats` (iterations x chains x statnames) when given.
 """
-function write_draws_csv(io::IO, names::Vector{String}, draws::Array{Float64,3})
+function write_draws_csv(io::IO, names::Vector{String}, draws::Array{Float64,3},
+                         statnames::Vector{String}=String[],
+                         stats::Array{Float64,3}=Array{Float64,3}(undef, size(draws, 1), size(draws, 2), 0))
     print(io, "chain,iteration")
+    for nm in statnames
+        print(io, ',', nm)
+    end
     for nm in names
         print(io, ',')
         _csv_field(io, nm)
     end
     print(io, '\n')
     niter, nch, nv = size(draws)
+    ns = size(stats, 3)
     for c in 1:nch, it in 1:niter
         print(io, c, ',', it)
+        for k in 1:ns
+            print(io, ',', stats[it, c, k])
+        end
         for v in 1:nv
             print(io, ',', draws[it, c, v])
         end
