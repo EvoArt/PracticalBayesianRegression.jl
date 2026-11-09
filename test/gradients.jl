@@ -111,6 +111,31 @@
         @test g ≈ g64 rtol = 1e-3 atol = 1e-3
     end
 
+    # Float32 must stay Float32 INSIDE the density, not only after the sampler's
+    # T(...) conversion: a Float64 constant (a prior's parameters, log(2pi), a
+    # link's 1/sqrt(2), a family's stored data) promotes every term after it, and
+    # the analytic path then returned a Float64 log density (inferred as a Union).
+    # One case per kind of leak found by benchmarks/float32/audit_cases.jl.
+    F32_CASES = Set(["gauss", "gauss_cor", "student", "negbin", "probit", "bern_cauchit", "binom_probit_approx",
+                     "cumulative_probit", "acat_probit", "cens_gauss", "trunc_gauss", "inverse_gaussian", "von_mises",
+                     "xbeta", "fcor", "sar_lag", "ar_cov", "mixture", "mo", "gr_student_cor"])
+    shrink = [("horseshoe", @bf(yg ~ x + z + (1 | g)), gaussian(), [prior("horseshoe(1, scale_global = 0.5)")]),
+              ("r2d2", @bf(yg ~ x + z + (1 | g)), gaussian(), [prior("R2D2(0.5, 2, 0.7)")])]
+    cases32 = vcat([(n, f, fam, [prior("normal(0, 2)"; class=:b)]) for (n, f, fam) in GRAD_CASES if n in F32_CASES],
+                   shrink)
+    @testset "Float32 stays Float32: $name" for (name, f, fam, pr) in cases32
+        ld, _ = build_model(f, TD; family=fam, prior=pr, T=Float32)
+        ld64, _ = build_model(f, TD; family=fam, prior=pr)
+        @test Base.return_types(logdensity_and_gradient!, (Vector{Float32}, typeof(ld), Vector{Float32})) == [Float32]
+        θ = 0.3f0 .* randn(rng, Float32, ld.dim)
+        g = zeros(Float32, ld.dim); g64 = zeros(ld64.dim)
+        v = logdensity_and_gradient!(g, ld, θ)
+        v64 = logdensity_and_gradient!(g64, ld64, Float64.(θ))
+        @test v isa Float32
+        @test v ≈ v64 rtol = 1e-4
+        @test g ≈ g64 rtol = 1e-3 atol = 1e-3
+    end
+
     @testset "no allocation in the gradient" begin
         ld, _ = build_model(@bf(yg ~ x + (1 + x | g)), TD)
         θ = 0.3 .* randn(rng, ld.dim); g = zeros(ld.dim)

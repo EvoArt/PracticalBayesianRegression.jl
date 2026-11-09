@@ -32,14 +32,14 @@ aux_bounds(::SkewNormal, d::Symbol) = d === :alpha ? (:identity, -Inf) : (:log, 
 dpar_link_name(::SkewNormal, d::Symbol) = d === :mu ? "identity" : d === :alpha ? "identity" : "log"
 function _sn_params(mu, ls, alpha)
     delta = alpha / sqrt(1 + alpha^2)
-    omega = exp(ls) / sqrt(1 - 2 / π * delta^2)
-    xi = mu - omega * delta * _SQRT_2_OVER_PI
+    omega = exp(ls) / sqrt(1 - _pv(delta, 2 / π) * delta^2)
+    xi = mu - omega * delta * _pv(delta, _SQRT_2_OVER_PI)
     return xi, omega, delta
 end
 @inline function _ll(::SkewNormal, y, x, eta)
     xi, omega, _ = _sn_params(eta[1], eta[2], eta[3])
     z = (y - xi) / omega
-    return log(2) - log(omega) + normlogpdf(z) + normlogcdf(eta[3] * z)
+    return _pv(omega, _LOG2) - log(omega) + normlogpdf(z) + normlogcdf(eta[3] * z)
 end
 _mean(::SkewNormal, eta, t) = eta[1]
 function _rand(rng, ::SkewNormal, eta, t)
@@ -91,7 +91,7 @@ dpars(::InverseGaussian) = (:mu, :shape)
 @inline function _ll(f::InverseGaussian, y, x, eta)
     mu = linkinv(link(f), eta[1])
     sh = exp(eta[2])
-    return (log(sh) - log(2π) - 3log(y)) / 2 - sh * (y - mu)^2 / (2 * mu^2 * y)
+    return (log(sh) - _pv(sh, _LOG_2PI) - 3log(y)) / 2 - sh * (y - mu)^2 / (2 * mu^2 * y)
 end
 _mean(f::InverseGaussian, eta, t) = linkinv(link(f), eta[1])
 _rand(rng, f::InverseGaussian, eta, t) = rand(rng, D_.InverseGaussian(linkinv(link(f), eta[1]), exp(eta[2])))
@@ -119,10 +119,10 @@ aux_ub(f::ShiftedLognormal, d::Symbol) = d === :ndt ? f.miny : 1.0
 dpar_link_name(::ShiftedLognormal, d::Symbol) = d === :mu ? "identity" : d === :ndt ? "logit (0, min_Y)" : "log"
 prior_link(::ShiftedLognormal) = :log
 @inline function _ll(f::ShiftedLognormal, y, x, eta)
-    ndt = f.miny * logistic(eta[3])
+    ndt = _pv(eta[3], f.miny) * logistic(eta[3])
     ly = log(y - ndt)
     r = (ly - eta[1]) * exp(-eta[2])
-    return -r * r / 2 - eta[2] - ly - _LOG_2PI_HALF
+    return -r * r / 2 - eta[2] - ly - _pv(r, _LOG_2PI_HALF)
 end
 _mean(f::ShiftedLognormal, eta, t) = f.miny * logistic(eta[3]) + exp(eta[1] + exp(2eta[2]) / 2)
 _rand(rng, f::ShiftedLognormal, eta, t) = f.miny * logistic(eta[3]) + exp(eta[1] + exp(eta[2]) * randn(rng))
@@ -162,9 +162,9 @@ end
 #   log I0(k) = k - log(2 pi k) / 2 + log(1 + 1/(8k) + 9/(128k^2) + 225/(3072k^3))
 #   I1/I0(k)  = 1 - 1/(2k) - 1/(8k^2) - 1/(8k^3)
 const _I0_ASYM = 1e4
-_logI0(k::Real) = k > _I0_ASYM ? k - log(2π * k) / 2 + log1p(1 / (8k) + 9 / (128k^2) + 225 / (3072k^3)) :
+_logI0(k::Real) = k > _pv(k, _I0_ASYM) ? k - log(_pv(k, 2π) * k) / 2 + log1p(1 / (8k) + 9 / (128k^2) + 225 / (3072k^3)) :
                   log(besselix(0, k)) + k
-_I1_over_I0(k::Real) = k > _I0_ASYM ? 1 - 1 / (2k) - 1 / (8k^2) - 1 / (8k^3) : besselix(1, k) / besselix(0, k)
+_I1_over_I0(k::Real) = k > _pv(k, _I0_ASYM) ? 1 - 1 / (2k) - 1 / (8k^2) - 1 / (8k^3) : besselix(1, k) / besselix(0, k)
 function _logI0(k::ForwardDiff.Dual{T}) where {T}
     v = ForwardDiff.value(k)
     return ForwardDiff.Dual{T}(_logI0(v), _I1_over_I0(v) * ForwardDiff.partials(k))
@@ -172,7 +172,7 @@ end
 dpars(::VonMises) = (:mu, :kappa)
 @inline function _ll(f::VonMises, y, x, eta)
     mu = linkinv(link(f), eta[1]); k = exp(eta[2])
-    return k * cos(y - mu) - log(2π) - _logI0(k)
+    return k * cos(y - mu) - _pv(k, _LOG_2PI) - _logI0(k)
 end
 _mean(f::VonMises, eta, t) = linkinv(link(f), eta[1])
 _rand(rng, f::VonMises, eta, t) = rand(rng, D_.VonMises(linkinv(link(f), eta[1]), exp(eta[2])))
@@ -257,16 +257,16 @@ dpars(::ComPoisson) = (:mu, :shape)
 function _logZ_cmp_approx(lmu, nu)
     nu2 = nu^2
     lcommon = log(nu) + lmu / nu
-    lcte = nu * exp(lmu / nu) - ((nu - 1) / (2nu) * lmu + (nu - 1) / 2 * log(2π) + log(nu) / 2)
+    lcte = nu * exp(lmu / nu) - ((nu - 1) / (2nu) * lmu + (nu - 1) / 2 * _pv(nu, _LOG_2PI) + log(nu) / 2)
     c1 = (nu2 - 1) / 24
     c2 = (nu2 - 1) / 1152 * (nu2 + 23)
     c3 = (nu2 - 1) / 414720 * (5 * nu2^2 - 298nu2 + 11237)
     return lcte + log(1 + c1 * exp(-lcommon) + c2 * exp(-2lcommon) + c3 * exp(-3lcommon))
 end
-_lkterm(lmu, nu, k) = (k - 1) * lmu - nu * loggamma(k)
+_lkterm(lmu, nu, k) = (k - 1) * lmu - nu * loggamma(_pv(lmu, k))
 function _logZ_cmp(lmu, nu)
     nu == 1 && return exp(lmu)
-    (lmu * nu >= log(1.5) && lmu >= log(1.5)) && return _logZ_cmp_approx(lmu, nu)
+    (lmu * nu >= _pv(lmu, log(1.5)) && lmu >= _pv(lmu, log(1.5))) && return _logZ_cmp_approx(lmu, nu)
     leps = -23 * log(2)
     acc = _lkterm(lmu, nu, 1)
     prev = acc; k = 1
@@ -331,7 +331,10 @@ function _logbetainc(x, a, b, upper::Bool)
     dx = exp((av - 1) * log(xv) + (bv - 1) * log1p(-xv) - logbeta(av, bv) - v) * (upper ? -1 : 1)
     # the step never crosses zero: with a = mu phi < 1e-5 (reachable in warm-up)
     # an absolute 1e-5 step evaluated beta_inc at a negative shape (DomainError)
-    ha = min(1e-5 * max(1.0, av), av / 2); hb = min(1e-5 * max(1.0, bv), bv / 2)
+    # (relative step 1e-5 in Float64; cbrt(eps) in lower precision, where 1e-5 would
+    # leave the difference quotient dominated by rounding, eps / h ~ 1e-2 in Float32)
+    hr = T === Float64 ? 1e-5 : cbrt(eps(T))
+    ha = min(hr * max(one(T), av), av / 2); hb = min(hr * max(one(T), bv), bv / 2)
     da = (_logbetainc(xv, av + ha, bv, upper) - _logbetainc(xv, av - ha, bv, upper)) / 2ha
     db = (_logbetainc(xv, av, bv + hb, upper) - _logbetainc(xv, av, bv - hb, upper)) / 2hb
     part(z) = z isa ForwardDiff.Dual ? ForwardDiff.partials(z) : zero(ForwardDiff.partials(zero(D)))

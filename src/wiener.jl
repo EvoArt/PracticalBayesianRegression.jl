@@ -62,14 +62,14 @@ function _wiener_logf0(u, w)
         for k in (-floor(Int, (K - 1) / 2)):ceil(Int, (K - 1) / 2)
             s += (w + 2k) * exp(-((w + 2k)^2 - w^2) / (2u))
         end
-        return log(s) - w^2 / (2u) - (log(2π) + 3log(u)) / 2
+        return log(s) - w^2 / (2u) - (_pv(u, _LOG_2PI) + 3log(u)) / 2
     end
     K = ceil(Int, kl)
     s = zero(u * w)
     for k in 1:K
-        s += k * exp(-(k^2 - 1) * π^2 * u / 2) * sin(k * π * w)
+        s += k * exp(-(k^2 - 1) * _pv(u, π^2) * u / 2) * sin(k * _pv(w, π) * w)
     end
-    return log(s) - π^2 * u / 2 + log(π)
+    return log(s) - _pv(u, π^2) * u / 2 + _pv(u, log(π))
 end
 
 # log density of response time t at the lower boundary
@@ -80,7 +80,7 @@ function _wiener_lower(t, v, a, τ, w)
 end
 
 function _ll(f::Wiener, y, d, eta)
-    v = eta[1]; a = exp(eta[2]); τ = f.miny * logistic(eta[3]); w = logistic(eta[4])
+    v = eta[1]; a = exp(eta[2]); τ = _pv(eta[3], f.miny) * logistic(eta[3]); w = logistic(eta[4])
     return d == 1 ? _wiener_lower(y, -v, a, τ, 1 - w) : _wiener_lower(y, v, a, τ, w)
 end
 _ll_const(::Wiener, y, t) = 0.0
@@ -97,7 +97,7 @@ _mean(::Wiener, eta, t) = throw(ArgumentError("posterior_epred is not defined fo
 # returns the response time with the boundary sign in its `negative_rt` option --
 # here the time, as posterior_predict's default
 function _rand(rng, f::Wiener, eta, t)
-    v = eta[1]; a = exp(eta[2]); τ = f.miny * logistic(eta[3]); w = logistic(eta[4])
+    v = eta[1]; a = exp(eta[2]); τ = _pv(eta[3], f.miny) * logistic(eta[3]); w = logistic(eta[4])
     x = a * w; s = 0.0; dt = 1e-4; sq = sqrt(dt)
     while 0 < x < a
         x += v * dt + sq * randn(rng); s += dt

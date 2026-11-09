@@ -80,9 +80,10 @@ function _r2d2_pullback!(g, t::R2D2Term, b::UnitRange{Int}, θ)
         g[k] += gu[n]
     end
     # R2: Beta(a, b) kernel + logit Jacobian
-    dR2 = dtau2 * sig2 / (1 - R2)^2 + (t.a - 1) / R2 - (t.b - 1) / (1 - R2)
+    ta, tb = _pv(u, t.a), _pv(u, t.b)
+    dR2 = dtau2 * sig2 / (1 - R2)^2 + (ta - 1) / R2 - (tb - 1) / (1 - R2)
     g[t.r2] += dR2 * R2 * (1 - R2) + (1 - 2R2)
-    lp += (t.a - 1) * log(R2) + (t.b - 1) * log1p(-R2) + log(R2) + log1p(-R2)
+    lp += (ta - 1) * log(R2) + (tb - 1) * log1p(-R2) + log(R2) + log1p(-R2)
     t.sigma[] != 0 && (g[t.sigma[]] += dtau2 * 2tau2)
     return lp
 end
@@ -94,8 +95,8 @@ function _r2d2_prior_generic(t::R2D2Term, b::UnitRange{Int}, θ)
         lp -= θ[k]^2 / 2
     end
     phi, lj = _stick(θ[t.phi], K)
-    lp += lj + (t.cons - 1) * sum(log.(phi))
     R2 = logistic(θ[t.r2])
-    lp += (t.a - 1) * log(R2) + (t.b - 1) * log1p(-R2) + log(R2) + log1p(-R2)
+    lp += lj + (_pv(R2, t.cons) - 1) * sum(log.(phi))
+    lp += (_pv(R2, t.a) - 1) * log(R2) + (_pv(R2, t.b) - 1) * log1p(-R2) + log(R2) + log1p(-R2)
     return lp
 end

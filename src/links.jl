@@ -70,14 +70,14 @@ end
 @inline linkinv(::TanHalfLink, e) = 2 * atan(e)
 @inline linkinv(::SoftplusLink, e) = log1pexp(e)
 @inline linkinv(::SquareplusLink, e) = (e + sqrt(e * e + 4)) / 2
-@inline linkinv(::ProbitApproxLink, e) = logistic(0.07056 * e^3 + 1.5976 * e)
-@inline linkinv(::CauchitLink, e) = atan(e) / π + 0.5
+@inline linkinv(::ProbitApproxLink, e) = logistic(_pv(e, 0.07056) * e^3 + _pv(e, 1.5976) * e)
+@inline linkinv(::CauchitLink, e) = atan(e) / π + one(e) / 2
 @inline linkinv(::SoftitLink, e) = (s = log1pexp(e); s / (1 + s))
 
 @inline mu_eta(::IdentityLink, e) = one(e)
 @inline mu_eta(::LogLink, e) = exp(e)
 @inline mu_eta(::LogitLink, e) = (s = logistic(e); s * (1 - s))
-@inline mu_eta(::ProbitLink, e) = exp(-e * e / 2) / sqrt(2π)
+@inline mu_eta(::ProbitLink, e) = exp(-e * e / 2) / _pv(e, sqrt(2π))
 @inline mu_eta(::CloglogLink, e) = exp(e - exp(e))
 @inline mu_eta(::SqrtLink, e) = 2e
 @inline mu_eta(::InverseLink, e) = -inv(e * e)
@@ -85,21 +85,22 @@ end
 @inline mu_eta(::TanHalfLink, e) = 2 / (1 + e * e)
 @inline mu_eta(::SoftplusLink, e) = logistic(e)
 @inline mu_eta(::SquareplusLink, e) = (1 + e / sqrt(e * e + 4)) / 2
-@inline mu_eta(::ProbitApproxLink, e) = (a = 0.07056 * e^3 + 1.5976 * e; s = logistic(a); s * (1 - s) * (3 * 0.07056 * e^2 + 1.5976))
+@inline mu_eta(::ProbitApproxLink, e) = (c3 = _pv(e, 0.07056); c1 = _pv(e, 1.5976); a = c3 * e^3 + c1 * e; s = logistic(a); s * (1 - s) * (3 * c3 * e^2 + c1))
 @inline mu_eta(::CauchitLink, e) = 1 / (π * (1 + e * e))
 @inline mu_eta(::SoftitLink, e) = (s = log1pexp(e); logistic(e) / (1 + s)^2)
 
 # --- normal cdf helpers, stable in the tails ---------------------------------
 const _INVSQRT2 = 1 / sqrt(2)
-@inline normcdf(x) = erfc(-x * _INVSQRT2) / 2
-@inline normlogpdf(x) = -x * x / 2 - 0.5 * log(2π)
+# (constants in x's precision: the Float32 path stays Float32 per observation)
+@inline normcdf(x) = erfc(-x * _pv(x, _INVSQRT2)) / 2
+@inline normlogpdf(x) = -x * x / 2 - _pv(x, _HALF_LOG_2PI)
 # log Phi(x): for x < -1 use the scaled complementary error function, which
 # does not underflow (Phi(-40) is 1e-350 but its log is fine)
 @inline function normlogcdf(x)
     if x < -1
-        return log(erfcx(-x * _INVSQRT2) / 2) - x * x / 2
+        return log(erfcx(-x * _pv(x, _INVSQRT2)) / 2) - x * x / 2
     else
-        return log1p(-erfc(x * _INVSQRT2) / 2)
+        return log1p(-erfc(x * _pv(x, _INVSQRT2)) / 2)
     end
 end
 # inverse Mills ratio phi(x) / Phi(x)

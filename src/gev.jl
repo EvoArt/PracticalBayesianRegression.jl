@@ -27,7 +27,7 @@ gen_extreme_value(; link=nothing) = _make_family(GenExtremeValue, link)
 
 function _gev_ll(y, mu, ls, xi)
     x = (y - mu) * exp(-ls)
-    abs(xi) < 1e-12 && return -ls - x - exp(-x)
+    abs(xi) < _pv(xi, 1e-12) && return -ls - x - exp(-x)
     t = 1 + xi * x
     t <= 0 && return oftype(t, -Inf)          # outside the support: density 0 (Stan: -Inf, rejected)
     return -ls - (1 + 1 / xi) * log(t) - t^(-1 / xi)

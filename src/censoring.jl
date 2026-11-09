@@ -160,7 +160,12 @@ end
 
 @inline _disc_t(fam, xb) = uses_trials(fam) ? round(Int, xb) : 0
 _disc_ub(fam, t) = uses_trials(fam) ? t : typemax(Int)
-@inline _disc_lpmf(fam, j, xb, eta, t) = _ll(fam, Float64(j), xb, eta) + _ll_const(fam, Float64(j), t)
+# the count in eta's precision (exact in Float32 below 2^24), so a Float32 fit's
+# pmf sums stay Float32
+@inline function _disc_lpmf(fam, j, xb, eta, t)
+    y = _pv(eta[1], Float64(j))
+    return _ll(fam, y, xb, eta) + _pv(eta[1], _ll_const(fam, y, t))
+end
 
 # log sum_{j = a}^{b} p(j); b = typemax(Int): until the terms are negligible
 function _disc_lsum(fam, a::Int, b::Int, xb, eta, t)
@@ -187,7 +192,7 @@ function _disc_lccdf(fam, y, xb, eta, t)
     y < 0 && return zero(_disc_lpmf(fam, 0, xb, eta, t))
     lF = _disc_lcdf(fam, y, xb, eta, t)
     # 1 - F loses everything when F is near 1: sum the upper tail directly then
-    return lF < -log(2) ? log1mexp(lF) : _disc_lsum(fam, round(Int, y) + 1, typemax(Int), xb, eta, t)
+    return lF < -_pv(lF, _LOG2) ? log1mexp(lF) : _disc_lsum(fam, round(Int, y) + 1, typemax(Int), xb, eta, t)
 end
 _disc_lint(fam, y, y2, xb, eta, t) = _disc_lsum(fam, round(Int, y) + 1, round(Int, y2), xb, eta, t)
 

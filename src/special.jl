@@ -92,7 +92,7 @@ function _stick!(simo, rem, z, u)
     stick = one(T)
     lj = zero(T)
     @inbounds for k in 1:(K - 1)
-        a = u[k] - log(K - k)
+        a = u[k] - log(T(K - k))
         zk = logistic(a)
         rem[k] = stick
         z[k] = zk
@@ -116,10 +116,11 @@ function _stick_grad!(gu, a, simo, rem, z, alpha)
     K = length(simo)
     T = eltype(simo)
     val = zero(T)
+    al = _pv(val, alpha)          # the concentration in the working precision
     for k in 1:K
-        alpha == 1 || (val += (alpha - 1) * log(simo[k]))
+        al == 1 || (val += (al - 1) * log(simo[k]))
     end
-    xbar(k) = a[k] + (alpha == 1 ? zero(T) : (alpha - 1) / simo[k])
+    xbar(k) = a[k] + (al == 1 ? zero(T) : (al - 1) / simo[k])
     rbar = xbar(K)                 # adjoint of the stick left after break K-1
     @inbounds for k in (K - 1):-1:1
         r, zk = rem[k], z[k]
@@ -568,9 +569,9 @@ struct CarTerm{T}
     J::Vector{Int}                 # observation -> location
     Nloc::Int
     e1::Vector{Int}; e2::Vector{Int}
-    nneigh::Vector{Float64}
-    eig::Vector{Float64}
-    scale::Float64                 # bym2
+    nneigh::Vector{T}
+    eig::Vector{T}
+    scale::T                       # bym2
     sd::Int                        # log sdcar
     z::UnitRange{Int}              # icar/bym2: Nloc; escar: Nloc (rcar itself); esicar: Nloc - 1
     nsz::UnitRange{Int}            # bym2
@@ -616,7 +617,7 @@ function _car_prior(t::CarTerm, θ)
     lp = prior_kernel(t.sd_prior, exp(u)) + u
     if t.type in (:icar, :bym2)
         z = θ[t.z]
-        lp += -sum(abs2, z[t.e1] .- z[t.e2]) / 2 - (sum(z) / (0.001 * t.Nloc))^2 / 2
+        lp += -sum(abs2, z[t.e1] .- z[t.e2]) / 2 - (sum(z) / (_pv(u, 0.001) * t.Nloc))^2 / 2
         if t.type === :bym2
             ρ = logistic(θ[t.rho])
             lp += -sum(abs2, θ[t.nsz]) / 2 + prior_kernel(t.rho_prior, ρ) + log(ρ) + log1p(-ρ)
@@ -684,7 +685,7 @@ function _car_pullback!(g, t::CarTerm, w, θ)
             gz[i] -= dz; gz[j] += dz
             lp -= dz^2 / 2
         end
-        sz = sum(z); k0 = 0.001 * t.Nloc
+        sz = sum(z); k0 = T(0.001) * t.Nloc
         gz .-= sz / k0^2
         lp -= (sz / k0)^2 / 2
         for (k, j) in enumerate(t.z)

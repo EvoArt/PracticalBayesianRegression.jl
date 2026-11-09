@@ -144,7 +144,7 @@ end
     vg = ntuple(Val(length(m.comps))) do k
         c = m.comps[k]; xk = _mix_x(x, k)
         v, g = _ll_grad(c, y, xk, parts[k])
-        (v + _ll_const_obs(c, y, uses_trials(c) ? round(Int, xk) : 0, xk), g)
+        (v + oftype(v, _ll_const_obs(c, y, uses_trials(c) ? round(Int, xk) : 0, xk)), g)
     end
     ps = ntuple(k -> lt[k] + vg[k][1], Val(length(m.comps)))
     L = logsumexp(ps)

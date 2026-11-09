@@ -55,19 +55,19 @@ HSTerm() = HSTerm(false, 0.0, 0.0, 0.0, 0.0, 0.0, 0, 0, 1:0, Ref(0))
 # global scale of tau's prior, and log sigma for the gradient
 @inline function _hs_gscale(h::HSTerm, θ)
     h.sigma[] == 0 && return oftype(float(θ[h.glob]), h.scale_global)
-    return h.scale_global * exp(θ[h.sigma[]])
+    return _pv(θ[h.glob], h.scale_global) * exp(θ[h.sigma[]])
 end
 
 function _hs_scales(h::HSTerm, θ)
     tau = exp(θ[h.glob])
-    c2 = h.scale_slab^2 * exp(θ[h.slab])
+    c2 = _pv(tau, h.scale_slab)^2 * exp(θ[h.slab])
     return [(lam = exp(θ[k]); tau * lam * sqrt(c2 / (c2 + tau^2 * lam^2))) for k in h.loc]
 end
 
 # fills bvals = zb .* s (analytic path)
 function _hs_bvals!(bvals, h::HSTerm, b::UnitRange{Int}, θ)
     tau = exp(θ[h.glob])
-    c2 = h.scale_slab^2 * exp(θ[h.slab])
+    c2 = _pv(tau, h.scale_slab)^2 * exp(θ[h.slab])
     @inbounds for (j, k) in enumerate(b)
         lam = exp(θ[h.loc[j]])
         bvals[j] = θ[k] * tau * lam * sqrt(c2 / (c2 + tau^2 * lam^2))
@@ -82,11 +82,11 @@ function _hs_pullback!(g, h::HSTerm, b::UnitRange{Int}, θ)
     ut, us = θ[h.glob], θ[h.slab]
     tau = exp(ut)
     slab = exp(us)
-    ss2 = h.scale_slab^2
+    ss2 = _pv(tau, h.scale_slab)^2
     c2 = ss2 * slab
     lp = zero(T)
     dtau = zero(T); dc2 = zero(T)
-    nu = h.df
+    nu = _pv(tau, h.df)
     @inbounds for (j, k) in enumerate(b)
         ul = θ[h.loc[j]]
         lam = exp(ul)
@@ -109,7 +109,7 @@ function _hs_pullback!(g, h::HSTerm, b::UnitRange{Int}, θ)
     end
     # tau: half-t(df_global, 0, scale), scale = scale_global (* sigma)
     sc = _hs_gscale(h, θ)
-    ng = h.df_global
+    ng = _pv(tau, h.df_global)
     r2 = (tau / sc)^2
     lp += -(ng + 1) / 2 * log1p(r2 / ng) - log(sc) + ut
     g[h.glob] += (dtau - (ng + 1) * tau / (ng * sc^2 + tau^2)) * tau + 1
@@ -117,7 +117,7 @@ function _hs_pullback!(g, h::HSTerm, b::UnitRange{Int}, θ)
         g[h.sigma[]] += (ng + 1) * tau^2 / (ng * sc^2 + tau^2) - 1
     end
     # slab: inv_gamma(df_slab/2, df_slab/2) on `slab`
-    al = h.df_slab / 2
+    al = _pv(tau, h.df_slab) / 2
     lp += -(al + 1) * us - al / slab + us
     g[h.slab] += (dc2 * ss2 - (al + 1) / slab + al / slab^2) * slab + 1
     return lp
@@ -125,7 +125,8 @@ end
 
 # generic path: the same prior terms, any number type
 function _hs_prior_generic(h::HSTerm, b::UnitRange{Int}, θ)
-    nu, ng, al = h.df, h.df_global, h.df_slab / 2
+    x0 = θ[h.glob]
+    nu, ng, al = _pv(x0, h.df), _pv(x0, h.df_global), _pv(x0, h.df_slab) / 2
     lp = zero(eltype(θ))
     for (j, k) in enumerate(b)
         lp -= θ[k]^2 / 2

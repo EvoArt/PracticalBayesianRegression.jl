@@ -114,7 +114,7 @@ function _udf_prior(gb::GroupBlock, θ)
     lp = prior_kernel(gb.df_prior, dfv) + u
     for k in gb.udf
         v = θ[k]
-        lp += -dfv / 2 * log(2) - loggamma(dfv / 2) - dfv / 2 * v - exp(-v) / 2
+        lp += -dfv / 2 * _pv(dfv, _LOG2) - loggamma(dfv / 2) - dfv / 2 * v - exp(-v) / 2
     end
     return lp
 end
@@ -305,6 +305,7 @@ end
 function GLMDensity(family, preds::Tuple, y::Vector{T}, trials, weights, dim, lconst; prior_only::Bool=false,
                     ordered=Int[], pinned=Int[], pinvals=T[], Jmi=Int[], ymi=1:0) where {T}
     N = length(y)
+    family = _prec_family(T, family)
     ws = map(p -> PredWS{T}(p, N), preds)
     # members of a shared block work in ONE GroupWS
     shared = Dict{Int,Any}()
@@ -423,7 +424,7 @@ function lkj_logpdf_chol(L, eta)
     q = size(L, 1)
     s = zero(eltype(L))
     for k in 2:q
-        s += (q - k + 2eta - 2) * log(L[k, k])
+        s += _pv(s, q - k + 2eta - 2) * log(L[k, k])
     end
     return s
 end
@@ -542,7 +543,7 @@ function _corr_value_grad!(gc::AbstractVector{T}, A::AbstractMatrix{T}, u::Abstr
             kl = k0 + l - 1
             z = tanh(u[kl])
             st = sqrt(gc[kl])
-            dFda = 1 + (m - l) / 2 + c / 2 + suffix
+            dFda = 1 + T(m - l) / 2 + c / 2 + suffix
             gc[kl] = A[i, l] * st * (1 - z * z) - 2z * dFda
             suffix += A[i, l] * z * st / 2         # add the L_il term for smaller l
         end
@@ -850,8 +851,8 @@ function _group_pullback!(g, gb::GroupBlock, gw::GroupWS{T}, w, θ) where {T}
             dm /= m
             # inv_chi_square(udf | df) on v = log udf, with its Jacobian
             g[kk] += dm * m / 2 - dfv / 2 + exp(-v) / 2
-            gdf += dm * m / (2dfv) - log(2) / 2 - digamma(dfv / 2) / 2 - v / 2
-            lp += -dfv / 2 * log(2) - loggamma(dfv / 2) - dfv / 2 * v - exp(-v) / 2
+            gdf += dm * m / (2dfv) - T(_LOG2) / 2 - digamma(dfv / 2) / 2 - v / 2
+            lp += -dfv / 2 * T(_LOG2) - loggamma(dfv / 2) - dfv / 2 * v - exp(-v) / 2
         end
         vd, dd = prior_kernel_grad(gb.df_prior, dfv)
         g[gb.df] += (gdf + dd) * (dfv - 1) + 1      # +1: log-Jacobian u

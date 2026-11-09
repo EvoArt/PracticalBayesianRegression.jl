@@ -112,7 +112,7 @@ end
         e = eta[i]
         i == 1 && return linkinv(L(), e)
         l = f.links[i]
-        l === :log ? f.lb[i] + exp(e) : l === :logit ? f.lb[i] + (f.ub[i] - f.lb[i]) * logistic(e) : e
+        l === :log ? _pv(e, f.lb[i]) + exp(e) : l === :logit ? _pv(e, f.lb[i]) + _pv(e, f.ub[i] - f.lb[i]) * logistic(e) : e
     end
 end
 @inline _cf_vars(::CustomFamily{F,R,M,N,L,0}, x) where {F,R,M,N,L} = ()

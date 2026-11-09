@@ -239,6 +239,18 @@ function _cdf(p::ScalarPrior, x)
     return 0.0
 end
 
+# A stored (Float64) prior constant in the precision of `x`: a Float32 sampling
+# path then stays in Float32 instead of promoting every prior term to Float64
+# (and returning a Float64 log density). Other number types (ForwardDiff duals,
+# BigFloat) see the constant as stored, which their own promotion handles.
+@inline _pv(x::T, v::Real) where {T<:Union{Float32,Float16}} = T(v)
+@inline _pv(x, v) = v
+# a dual number over Float32 (the dual-number families' per-observation
+# gradient): the constant in its value type, so Dual{Float32} stays Dual{Float32}
+@inline _pv(x::ForwardDiff.Dual{G,V}, v::Real) where {G,V<:Union{Float32,Float16}} = V(v)
+const _LOG2 = log(2.0)
+const _LOG_2PI = log(2π)
+
 """
     prior_kernel(p, x)
 
@@ -249,38 +261,39 @@ function prior_kernel(p::ScalarPrior, x)
     k = p.kind
     T = typeof(x)
     (k == PK_FLAT || k == PK_CONSTANT) && return zero(T)
+    pa, pb, pc = _pv(x, p.a), _pv(x, p.b), _pv(x, p.c)
     if k == PK_NORMAL
-        r = (x - p.a) / p.b
+        r = (x - pa) / pb
         return -r * r / 2
     elseif k == PK_STUDENT
-        r = (x - p.b) / p.c
-        return -(p.a + 1) / 2 * log1p(r * r / p.a)
+        r = (x - pb) / pc
+        return -(pa + 1) / 2 * log1p(r * r / pa)
     elseif k == PK_CAUCHY
-        r = (x - p.a) / p.b
+        r = (x - pa) / pb
         return -log1p(r * r)
     elseif k == PK_EXPONENTIAL
-        return -p.a * x
+        return -pa * x
     elseif k == PK_GAMMA
-        return (p.a - 1) * log(x) - p.b * x
+        return (pa - 1) * log(x) - pb * x
     elseif k == PK_INVGAMMA
-        return -(p.a + 1) * log(x) - p.b / x
+        return -(pa + 1) * log(x) - pb / x
     elseif k == PK_LOGNORMAL
         lx = log(x)
-        r = (lx - p.a) / p.b
+        r = (lx - pa) / pb
         return -r * r / 2 - lx
     elseif k == PK_BETA
-        return (p.a - 1) * log(x) + (p.b - 1) * log1p(-x)
+        return (pa - 1) * log(x) + (pb - 1) * log1p(-x)
     elseif k == PK_UNIFORM
         # Stan: -Inf outside the support (pair with bounds on the parameter)
-        return p.a <= x <= p.b ? zero(T) : T(-Inf)
+        return pa <= x <= pb ? zero(T) : T(-Inf)
     elseif k == PK_LOGISTIC
-        z = (x - p.a) / p.b
+        z = (x - pa) / pb
         return -z - 2 * log1pexp(-z)
     elseif k == PK_LAPLACE
-        return -abs(x - p.a) / p.b
+        return -abs(x - pa) / pb
     elseif k == PK_SKEWNORMAL
-        z = (x - p.a) / p.b
-        return -z * z / 2 + normlogcdf(p.c * z)
+        z = (x - pa) / pb
+        return -z * z / 2 + normlogcdf(pc * z)
     end
     error("unreachable")
 end
@@ -302,35 +315,36 @@ function prior_kernel_grad(p::ScalarPrior, x::T) where {T<:Real}
     k = p.kind
     (k == PK_FLAT || k == PK_CONSTANT) && return zero(T), zero(T)
     v = prior_kernel(p, x)
+    pa, pb, pc = _pv(x, p.a), _pv(x, p.b), _pv(x, p.c)
     d = if k == PK_NORMAL
-        -(x - p.a) / (p.b * p.b)
+        -(x - pa) / (pb * pb)
     elseif k == PK_STUDENT
-        nu, mu, s = p.a, p.b, p.c
+        nu, mu, s = pa, pb, pc
         e = x - mu
         -(nu + 1) * e / (nu * s * s + e * e)
     elseif k == PK_CAUCHY
-        e = x - p.a
-        -2e / (p.b * p.b + e * e)
+        e = x - pa
+        -2e / (pb * pb + e * e)
     elseif k == PK_EXPONENTIAL
-        -T(p.a)
+        -pa
     elseif k == PK_GAMMA
-        (p.a - 1) / x - p.b
+        (pa - 1) / x - pb
     elseif k == PK_INVGAMMA
-        -(p.a + 1) / x + p.b / (x * x)
+        -(pa + 1) / x + pb / (x * x)
     elseif k == PK_LOGNORMAL
-        -(1 + (log(x) - p.a) / (p.b * p.b)) / x
+        -(1 + (log(x) - pa) / (pb * pb)) / x
     elseif k == PK_BETA
-        (p.a - 1) / x - (p.b - 1) / (1 - x)
+        (pa - 1) / x - (pb - 1) / (1 - x)
     elseif k == PK_UNIFORM
         zero(T)
     elseif k == PK_LOGISTIC
-        z = (x - p.a) / p.b
-        (2 * logistic(-z) - 1) / p.b
+        z = (x - pa) / pb
+        (2 * logistic(-z) - 1) / pb
     elseif k == PK_LAPLACE
-        -sign(x - p.a) / p.b
+        -sign(x - pa) / pb
     elseif k == PK_SKEWNORMAL
-        z = (x - p.a) / p.b
-        (-z + p.c * mills(p.c * z)) / p.b
+        z = (x - pa) / pb
+        (-z + pc * mills(pc * z)) / pb
     else
         error("unreachable")
     end

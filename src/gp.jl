@@ -60,10 +60,10 @@ _nz(t::GPTerm) = length(t.z)
     end
     r = sqrt(d2)
     if cov === :matern52
-        a = sqrt(5) * r / l; e = exp(-a)
+        a = sqrt(_pv(r, 5)) * r / l; e = exp(-a)
         return s2 * (1 + a + a^2 / 3) * e, s2 * e * a^2 * (1 + a) / 3
     elseif cov === :matern32
-        a = sqrt(3) * r / l; e = exp(-a)
+        a = sqrt(_pv(r, 3)) * r / l; e = exp(-a)
         return s2 * (1 + a) * e, s2 * a^2 * e
     end
     a = r / l; e = exp(-a)
@@ -74,11 +74,13 @@ end
 # Matern family (nu' = 5, 3, 1), spd = s^2 sqrt(2 pi)^D l^D exp(-l^2 lam / 2) for exp_quad
 @inline function _gp_logsq(cov::Symbol, D, l, lam)
     if cov === :exp_quad
-        return (D * log(sqrt(2π)) + D * log(l) - l^2 * lam / 2) / 2, (D - l^2 * lam) / 2
+        return (_pv(l, D * log(sqrt(2π))) + D * log(l) - l^2 * lam / 2) / 2, (D - l^2 * lam) / 2
     end
-    ν = cov === :matern52 ? 5.0 : cov === :matern32 ? 3.0 : 1.0
-    logC = D * log(2) + D / 2 * log(π) + loggamma((D + ν) / 2) - log(sqrt(π)) +
-           (cov === :matern52 ? 2.5 * log(5) - log(0.75) : cov === :matern32 ? 1.5 * log(3) - log(0.5) : 0.0)
+    # the constants in Float64, then in l's precision
+    ν0 = cov === :matern52 ? 5.0 : cov === :matern32 ? 3.0 : 1.0
+    logC = _pv(l, D * log(2) + D / 2 * log(π) + loggamma((D + ν0) / 2) - log(sqrt(π)) +
+                  (cov === :matern52 ? 2.5 * log(5) - log(0.75) : cov === :matern32 ? 1.5 * log(3) - log(0.5) : 0.0))
+    ν = _pv(l, ν0)
     expo = -(D + ν) / 2
     u = ν + l^2 * lam
     return (logC + D * log(l) + expo * log(u)) / 2, (D + expo * 2 * l^2 * lam / u) / 2
@@ -159,7 +161,7 @@ function _gp_f(t::GPTerm, θ)
         return t.Phi * (sq .* z)
     end
     K = [first(_gp_k(t.cov, d2, s^2, l)) for d2 in t.D2]
-    K += _GP_JITTER * I
+    K += _pv(s, _GP_JITTER) * I
     # A long length-scale makes K numerically singular despite the jitter.
     # Stan rejects such a proposal; NaN does the same here (the samplers treat
     # a non-finite density as divergent) instead of throwing mid-chain.
@@ -206,7 +208,7 @@ function _gp_pullback!(g, t::GPTerm{T}, w, θ) where {T}
     else
         KD = [_gp_k(t.cov, d2, s^2, l) for d2 in t.D2]
         K0 = first.(KD); dK = last.(KD)
-        C = cholesky(Symmetric(K0 + _GP_JITTER * I); check=false)
+        C = cholesky(Symmetric(K0 + T(_GP_JITTER) * I); check=false)
         issuccess(C) || return T(NaN)              # rejected proposal, as in _gp_f
         L = Matrix(C.L)
         gz .+= L' * fbar
