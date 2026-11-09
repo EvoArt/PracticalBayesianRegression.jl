@@ -4,10 +4,10 @@
 CurrentModule = PracticalBayesianRegression
 ```
 
-The plotting functions need a plotting package to be loaded: CairoMakie (or
-another Makie backend), PlotlyLight or UnicodePlots. With more than one
-loaded, pass `backend = :makie`, `:plotly` or `:unicode`; otherwise they use
-the first available in that order. See [Plot a fit](@ref).
+The plotting functions draw with PracticalBayesPlot, a dependency, unless
+CairoMakie (or another Makie backend), PlotlyLight or UnicodePlots is
+loaded. Pass `backend = :makie`, `:plotly`, `:unicode` or `:pbp` to pick
+one; otherwise they use the first loaded in that order. See [Plot a fit](@ref).
 
 ```@docs
 pp_check

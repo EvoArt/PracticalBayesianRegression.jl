@@ -27,6 +27,7 @@ import StatsAPI
 using StatsAPI: vcov, nobs        # re-exported (the StatsAPI functions, so no clash with StatsBase)
 import Serialization
 import TOML
+import PracticalBayesPlot as PBP   # the default plotting backend (plots_pbp.jl)
 using PrettyTables: pretty_table, TextHighlighter, TextTableFormat, TextTableStyle, AnsiTextCell,
                     text_table_borders__unicode_rounded, fmt__printf
 using Printf: @sprintf
@@ -80,6 +81,7 @@ include("brmsapi.jl")      # vcov, ngrps, reloo, kfold_predict, make_conditions,
 include("rdists.jl")       # brms's d/p/q/r distribution functions
 include("effects.jl")
 include("plots.jl")
+include("plots_pbp.jl")    # the default plotting backend
 include("codegen.jl")
 include("csvio.jl")       # model binaries: CSV in / draws out
 include("recipe.jl")      # model structure without data; trimmable assembly

@@ -17,4 +17,5 @@ include("testdata.jl")
     include("multivariate.jl")
     include("codegen.jl")
     include("recipe.jl")
+    include("plots.jl")
 end
