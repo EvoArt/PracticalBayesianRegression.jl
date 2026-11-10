@@ -126,8 +126,10 @@ function _atom_info(a::Atom, v)
     pa === nothing && sa === nothing && return _atom_info(v)
     nonmissingtype(eltype(v)) <: Real ||
         throw(ArgumentError("$(a.ex.args[1])() needs a numeric variable"))
-    pa === nothing || return AtomInfo(nothing, PolyBasis(v, pa[2], pa[3]))
-    return AtomInfo(nothing, SplineBasis(v, sa[2], sa[3], sa[4]; knots=sa[5], bknots=sa[6]))
+    # inference barriers: whether an atom is poly() / bs() / ns() is known only at
+    # run time, and plain calls made every model infer both bases' code
+    pa === nothing || return AtomInfo(nothing, Base.inferencebarrier(PolyBasis)(v, pa[2], pa[3]))
+    return AtomInfo(nothing, Base.inferencebarrier(SplineBasis)(v, sa[2], sa[3], sa[4]; knots=sa[5], bknots=sa[6]))
 end
 
 # Classify a column. Anything not a (non-Bool) Real is a factor, matching R,
@@ -265,7 +267,7 @@ function _term_names(t, full, infos)
 end
 
 function _atom_block(v, full::Bool, info::AtomInfo)
-    info.basis === nothing || return _basis_block(info.basis, v)
+    info.basis === nothing || return Base.inferencebarrier(_basis_block)(info.basis, v)::Matrix{Float64}
     if !iscategorical(info)
         return reshape(Float64.(v), :, 1)
     end

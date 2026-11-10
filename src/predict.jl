@@ -47,7 +47,7 @@ struct PredLin{P}
     lacTC::Vector{Any}             # latent autocorrelation: the new rows' structure (empty: training)
 end
 PredLin(p, Xc, offset, groups) =
-    PredLin(p, Xc, offset, groups, Any[(m.xs, m.csp) for m in p.mo], _has_ar(p.ar), [Float64.(sb.Z) for sb in p.smooths],
+    PredLin(p, Xc, offset, groups, Any[(m.xs, m.csp) for m in p.mo], _has_ar(p.ar), Matrix{Float64}[Float64.(sb.Z) for sb in p.smooths],
             Vector{Float64}[], Matrix{Float64}[], Vector{Int}[], Any[])
 
 struct PredNL{F,P,D}

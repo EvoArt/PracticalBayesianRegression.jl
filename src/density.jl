@@ -142,7 +142,12 @@ centred (`means` holds the column means); the intercept is then the
 CENTRED intercept, as in brms, and the reported `b_Intercept` is
 `Intercept - means' * b`.
 """
-struct LinPred{T}
+# The optional terms' slots (mo ... mecor) have their own type parameters: an
+# absent term is stored as `()` (_slot), so every loop over it, and every
+# `isempty` test, is resolved at compile time and the term's code is not
+# compiled for models without it. With a concrete empty Vector instead, every
+# model's first fit inferred and compiled the code of every optional term.
+struct LinPred{T,MO,SM,ME,GP,MI,CAR,LAC,MEC}
     dpar::Symbol
     intercept::Int           # θ index, 0 when the formula has no intercept
     Xc::Matrix{T}
@@ -158,26 +163,36 @@ struct LinPred{T}
     b_lb::Vector{Float64}    # bounds on each coefficient (prior(...; lb, ub))
     b_ub::Vector{Float64}
     bounded::Bool            # any finite bound: b is then a transform of θ
-    mo::Vector{MoTerm}       # monotonic effects (special.jl)
+    mo::MO                   # monotonic effects (special.jl): Vector{MoTerm}, or () if none
     ar::ARTerm{T}            # autoregressive term (special.jl), p = 0 if none
     hs::HSTerm               # horseshoe prior on b (horseshoe.jl); hs.on = false if none
     r2d2::R2D2Term           # R2D2 prior on b (r2d2.jl)
-    smooths::Vector{SmoothBlock{T}}   # penalised parts of s() terms (splines.jl)
-    me::Vector{MeTerm{T}}             # measurement-error terms (special.jl)
-    gp::Vector{GPTerm{T}}             # Gaussian processes (gp.jl)
-    mi::Vector{MiTerm{T}}             # imputed predictors mi(x) (special.jl)
-    car::Vector{CarTerm{T}}           # spatial CAR terms (special.jl)
-    lac::Vector{LatentAC{T}}          # latent residual autocorrelation, non-gaussian (timecov.jl)
-    mecor::Vector{MeCorTerm{T}}       # correlated me() latents (brms mecor, special.jl); its terms are in `me` too
+    smooths::SM              # penalised parts of s() terms (splines.jl): Vector{SmoothBlock{T}} or ()
+    me::ME                   # measurement-error terms (special.jl): Vector{MeTerm{T}} or ()
+    gp::GP                   # Gaussian processes (gp.jl): Vector{GPTerm{T}} or ()
+    mi::MI                   # imputed predictors mi(x) (special.jl): Vector{MiTerm{T}} or ()
+    car::CAR                 # spatial CAR terms (special.jl): Vector{CarTerm{T}} or ()
+    lac::LAC                 # latent residual autocorrelation, non-gaussian (timecov.jl): Vector{LatentAC{T}} or ()
+    mecor::MEC               # correlated me() latents (brms mecor, special.jl), or (); its terms are in `me` too
 end
+
+# an optional term's slot: () when absent, else a Vector{E} (see LinPred).
+# The keyword defaults are () so a caller passing no terms (the model
+# binaries' trimmed `assemble`) gets a LinPred type fixed at compile time;
+# the front end passes vectors and decides at run time.
+_slot(::Type, ::Tuple{}) = ()
+_slot(::Type{E}, v::AbstractVector) where {E} = isempty(v) ? () : convert(Vector{E}, v)
+
 function LinPred{T}(dpar, intercept, Xc, means, coefnames, b, groups, offset, int_prior, b_priors, any_b_prior;
-                    b_lb=fill(-Inf, length(b)), b_ub=fill(Inf, length(b)), mo=MoTerm[], ar=ARTerm{T}(),
-                    hs=HSTerm(), r2d2=R2D2Term(), smooths=SmoothBlock{T}[], me=MeTerm{T}[], gp=GPTerm{T}[],
-                    mi=MiTerm{T}[], car=CarTerm{T}[], lac=LatentAC{T}[], mecor=MeCorTerm{T}[]) where {T}
+                    b_lb=fill(-Inf, length(b)), b_ub=fill(Inf, length(b)), mo=(), ar=ARTerm{T}(),
+                    hs=HSTerm(), r2d2=R2D2Term(), smooths=(), me=(), gp=(), mi=(), car=(), lac=(),
+                    mecor=()) where {T}
     bounded = any(isfinite, b_lb) || any(isfinite, b_ub)
-    return LinPred{T}(dpar, intercept, Xc, means, coefnames, b, groups, offset, int_prior, b_priors,
-                      any_b_prior || bounded, any(!iszero, offset), b_lb, b_ub, bounded, mo, ar, hs, r2d2, smooths, me, gp, mi, car, lac,
-                      mecor)
+    s = (_slot(MoTerm, mo), _slot(SmoothBlock{T}, smooths), _slot(MeTerm{T}, me), _slot(GPTerm{T}, gp),
+         _slot(MiTerm{T}, mi), _slot(CarTerm{T}, car), _slot(LatentAC{T}, lac), _slot(MeCorTerm{T}, mecor))
+    return LinPred{T,map(typeof, s)...}(dpar, intercept, Xc, means, coefnames, b, groups, offset, int_prior,
+                                         b_priors, any_b_prior || bounded, any(!iszero, offset), b_lb, b_ub, bounded,
+                                         s[1], ar, hs, r2d2, s[2], s[3], s[4], s[5], s[6], s[7], s[8])
 end
 
 # b = transform(u) for a bounded coefficient: (value, d value/du, log-Jacobian,

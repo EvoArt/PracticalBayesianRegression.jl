@@ -105,8 +105,11 @@ function brm(formula, data; family=gaussian(), prior=PriorSpec[], chains::Int=4,
              T::Type{<:AbstractFloat}=Float64, sample_prior=:no, data2=nothing, mi::Symbol=:auto,
              algorithm::Symbol=:sampling, ndraws::Int=1000)
     fb = formula isa MVFormula ? formula : bf(formula)
-    _is_mv(fb) && return _brm_mv(fb, data; family, prior, chains, iter, warmup, thin, seed, sampler, delta,
-                                 max_depth, metric, init, threads, T, sample_prior, mi, algorithm, ndraws)
+    # inference barrier: a run-time branch to the multivariate path made every
+    # univariate fit infer it (and, through it, the approximate algorithms)
+    _is_mv(fb) && return Base.inferencebarrier(_brm_mv)(fb, data; family, prior, chains, iter, warmup, thin, seed,
+                                                        sampler, delta, max_depth, metric, init, threads, T,
+                                                        sample_prior, mi, algorithm, ndraws)
     iter > warmup || throw(ArgumentError("iter must exceed warmup"))
     mi in (:auto, :sample) || throw(ArgumentError("mi must be :auto (integrate missing values out where exact) or :sample (brms)"))
     ld, info = build_model(formula, data; family=family, prior=prior, T=T, sample_prior=sample_prior, data2=data2,
@@ -131,11 +134,24 @@ function sample_model(ld::GLMDensity{F,P,W,T}, info::ModelInfo; chains::Int=4, i
                       warmup::Int=iter ÷ 2, thin::Int=1, seed=nothing, sampler=:nuts, delta=0.8,
                       max_depth::Int=10, metric::Symbol=:diag, init=2.0, threads::Bool=true,
                       algorithm::Symbol=:sampling, ndraws::Int=1000) where {F,P,W,T}
-    # brms algorithm = "laplace" / "meanfield" / "fullrank" / "pathfinder" (approx.jl)
-    algorithm === :sampling || ((iter, warmup, thin) = (ndraws, 0, 1))
-    draws, results, name = algorithm === :sampling ?
-        _sample_core(ld, T; chains, iter, warmup, thin, seed, sampler, delta, max_depth, metric, init, threads) :
-        _approx_draws(ld, algorithm; seed, ndraws, init)
+    # brms algorithm = "laplace" / "meanfield" / "fullrank" / "pathfinder"
+    # (approx.jl), behind an inference barrier: with `algorithm` a run-time
+    # Symbol, a plain branch made every sampling fit infer and compile all four
+    # approximations (16% of a first fit's compile time). The assertion keeps
+    # this method's return type concrete.
+    algorithm === :sampling ||
+        return Base.inferencebarrier(_approx_fit)(ld, info, algorithm; seed, ndraws, init)::BrmsFit{typeof(ld)}
+    draws, results, name = _sample_core(ld, T; chains, iter, warmup, thin, seed, sampler, delta, max_depth, metric,
+                                        init, threads)
+    return _finish_fit(ld, info, draws, results, name, iter, warmup, thin, seed)
+end
+
+function _approx_fit(ld, info, algorithm; seed, ndraws, init)
+    draws, results, name = _approx_draws(ld, algorithm; seed, ndraws, init)
+    return _finish_fit(ld, info, draws, results, name, ndraws, 0, 1, seed)
+end
+
+function _finish_fit(ld, info, draws, results, name, iter, warmup, thin, seed)
     # integrated-out missing values: their draws, as generated quantities past θ
     draws = _mi_generate(ld, draws, seed === nothing ? Random.default_rng() : Random.Xoshiro(seed + 104729))
     chain = _make_chain(ld, draws, results)
@@ -211,6 +227,17 @@ function _run_chain(ld, sampler, nkeep, nwarm, thin, θ0, rng, delta, max_depth;
                             metric=metric, rng=rng)
         return (draws=dr, stats=st, ndiv=round(Int, sum(st["divergent__"])), time=time() - t0)
     end
+    # behind an inference barrier: with `sampler` a run-time value, a plain
+    # branch made every NUTS fit infer and compile AdvancedHMC (17% of a first
+    # fit's compile time). Both branches return a _ChainResult.
+    return Base.inferencebarrier(_run_chain_ahmc)(ld, sampler, nkeep, nwarm, thin, θ0, rng, delta, max_depth,
+                                                  t0)::_ChainResult
+end
+
+const _ChainResult = @NamedTuple{draws::Matrix{Float64}, stats::Dict{String,Vector{Float64}}, ndiv::Int,
+                                 time::Float64}
+
+function _run_chain_ahmc(ld, sampler, nkeep, nwarm, thin, θ0, rng, delta, max_depth, t0)
     sampler isa Symbol && sampler !== :advancedhmc &&
         throw(ArgumentError("unknown sampler `:$sampler` (use :nuts, :advancedhmc or an AdvancedHMC sampler)"))
     spl = sampler === :advancedhmc ? AdvancedHMC.NUTS(delta; max_depth=max_depth) : sampler

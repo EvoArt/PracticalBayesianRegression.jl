@@ -477,7 +477,10 @@ function build_model(formula, data; family=gaussian(), prior=PriorSpec[], T::Typ
             continue
         end
         if dp === :mu && f.nl
-            push!(preds, _build_nlpred(f, vals, infos, N, T, fam, y, user, table, take, dinfo))
+            # inference barrier: `f.nl` is a run-time Bool, and a plain call made
+            # every linear model infer the non-linear builder (11 of build_model's
+            # 20 s of first-call compile time)
+            push!(preds, Base.inferencebarrier(_build_nlpred)(f, vals, infos, N, T, fam, y, user, table, take, dinfo))
             continue
         end
         if (e = _nlf_entry(f, dp)) !== nothing
@@ -821,6 +824,22 @@ function _build_nlpred(f, vals, infos, N, T, fam, y, user, table, take, dinfo;
     return NLPred(dp, fun, Tuple(pars), copy(nlps), data)
 end
 
+function _make_smooth(kind, bs, Xcov, k, lab, numby, covs, infos, xt, by)
+    return kind === :t2 ? T2Smooth(Xcov; k, label=lab) :
+           bs === :re ? res(Xcov, Union{Nothing,Vector{String}}[iscategorical(infos[a]) ?
+                                [_level_name(l) for l in infos[a].levels] : nothing for a in covs]; label=lab) :
+           bs === :fs ? _build_fs(covs, Xcov, infos, k, xt, lab, by) :
+           bs === :cp ? cps(Xcov; k, label=lab, center=!numby) :
+           bs === :bs ? mbs(Xcov; k, label=lab, center=!numby) :
+           bs === :gp ? mgps(Xcov; k, label=lab, center=!numby) :
+           bs === :mrf ? mrfs(Xcov, [_level_name(l) for l in infos[covs[1]].levels], _eval_xt(xt); label=lab, center=!numby) :
+           bs === :cr ? crs(Xcov; k, label=lab, center=!numby) :
+           bs === :cs ? crs(Xcov; k, label=lab, center=!numby, shrink=true) :
+           bs === :ts ? tprs(Xcov; k, label=lab, center=!numby, shrink=true) :
+           bs === :ps ? pss(Xcov; k, label=lab, center=!numby) :
+           bs === :cc ? ccs(Xcov; k, label=lab, center=!numby) : tprs(Xcov; k, label=lab, center=!numby)
+end
+
 function _build_linpred(dp, rhs, vals, infos, N, T, fam, y, user, table, take; nlpar::Bool=false, shared=nothing,
                         center::Bool=true, mi_marg=Set{String}(), mecor::Bool=true)
     spec = design_spec(rhs.intercept, rhs.terms, infos)
@@ -837,20 +856,12 @@ function _build_linpred(dp, rhs, vals, infos, N, T, fam, y, user, table, take; n
         lab = string(kind) * join(brms_rename.(getfield.(covs, :label)))
         # a numeric `by` multiplies an UNcentred smooth (mgcv applies no constraint then)
         numby = by !== nothing && !iscategorical(infos[by])
-        t = kind === :t2 ? T2Smooth(Xcov; k, label=lab) :
-            bs === :re ? res(Xcov, Union{Nothing,Vector{String}}[iscategorical(infos[a]) ?
-                                 [_level_name(l) for l in infos[a].levels] : nothing for a in covs]; label=lab) :
-            bs === :fs ? _build_fs(covs, Xcov, infos, k, length(spec) >= 7 ? spec[7] : :tp, lab, by) :
-            bs === :cp ? cps(Xcov; k, label=lab, center=!numby) :
-            bs === :bs ? mbs(Xcov; k, label=lab, center=!numby) :
-            bs === :gp ? mgps(Xcov; k, label=lab, center=!numby) :
-            bs === :mrf ? mrfs(Xcov, [_level_name(l) for l in infos[covs[1]].levels], _eval_xt(spec[7]); label=lab, center=!numby) :
-            bs === :cr ? crs(Xcov; k, label=lab, center=!numby) :
-            bs === :cs ? crs(Xcov; k, label=lab, center=!numby, shrink=true) :
-            bs === :ts ? tprs(Xcov; k, label=lab, center=!numby, shrink=true) :
-            bs === :ps ? pss(Xcov; k, label=lab, center=!numby) :
-            bs === :cc ? ccs(Xcov; k, label=lab, center=!numby) : tprs(Xcov; k, label=lab, center=!numby)
-        Xs, Zs = smooth_basis(t, Xcov)
+        # inference barriers (here and for gp() / ar() below): these terms are
+        # present only at run time, and plain calls made every model infer and
+        # compile their builders (~7 s of a first build_model)
+        xt = length(spec) >= 7 ? spec[7] : :tp
+        t = Base.inferencebarrier(_make_smooth)(kind, bs, Xcov, k, lab, numby, covs, infos, xt, by)
+        Xs, Zs = Base.inferencebarrier(smooth_basis)(t, Xcov)
         if numby
             # s(x, by = z), z numeric: brms names the smooth s<x>:<z>
             bz = Float64.(vals[by])
@@ -1143,11 +1154,11 @@ function _build_linpred(dp, rhs, vals, infos, N, T, fam, y, user, table, take; n
         covs, k, c, scale = spec
         cov = length(spec) >= 5 ? spec[5] : :exp_quad
         X = reduce(hcat, [Float64.(vals[a]) for a in covs])
-        J, Xs, dmax, cmeans, Lb, ks = _gp_data(X, k, c, scale)
+        J, Xs, dmax, cmeans, Lb, ks = Base.inferencebarrier(_gp_data)(X, k, c, scale)
         lab = "gp" * join(brms_rename.(getfield.(covs, :label)))
         sdp = _resolve!(table, user, fam, y, :sdgp, dp; coef=lab, lb=0.0)
         lrow = _lookup_prior(user, :lscale, lab, "", dp === :mu ? "" : string(dp))
-        lsp0 = lrow === nothing ? _lscale_prior(Xs) : lrow.prior
+        lsp0 = lrow === nothing ? Base.inferencebarrier(_lscale_prior)(Xs) : lrow.prior
         push!(table, PriorSpec(lsp0, :lscale, lab, "", dp === :mu ? "" : string(dp), lrow === nothing ? :default : :user))
         lsp = with_bound(lsp0, 0.0)
         approx = k !== nothing
@@ -1166,7 +1177,7 @@ function _build_linpred(dp, rhs, vals, infos, N, T, fam, y, user, table, take; n
         gr = ga === nothing ? nothing : vals[ga]
         pri = [_resolve!(table, user, fam, y, :ar, :mu; coef=string(k)) for k in 1:p]
         mpri = [_resolve!(table, user, fam, y, :ma, :mu; coef=string(k)) for k in 1:q]
-        prev, order = _ar_prev(time, gr, max(p, q))
+        prev, order = Base.inferencebarrier(_ar_prev)(time, gr, max(p, q))
         ar = ARTerm{T}(p, take(p), q, take(q), prev, order, T.(y), pri, mpri)
     end
     # latent residual autocorrelation (non-gaussian families; brms err = sderr * L zerr)
