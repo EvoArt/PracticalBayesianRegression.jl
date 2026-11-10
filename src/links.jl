@@ -110,3 +110,15 @@ end
 # (identity link on a positive mean): -Inf is a rejected proposal, a
 # DomainError would kill the chain
 @inline _slog(x) = x > 0 ? log(x) : oftype(float(x), -Inf)
+
+# log of the mean: eta itself for the log link, no rounding of mu near 1 for
+# logit, otherwise log(linkinv) (-Inf outside the support, as _slog)
+@inline _logmu(::LogLink, e) = e
+@inline _logmu(::LogitLink, e) = -log1pexp(-e)
+@inline _logmu(L::Link, e) = _slog(linkinv(L, e))
+# (log mu, d log mu / d eta)
+@inline _logmu_d(::LogLink, e) = (e, one(e))
+@inline function _logmu_d(L::Link, e)
+    mu = linkinv(L, e)
+    return _slog(mu), mu_eta(L, e) / mu
+end

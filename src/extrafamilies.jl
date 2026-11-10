@@ -9,7 +9,7 @@
 # density, added back by log_lik) except inside the y = 0 mixture, where it is 1.
 # =============================================================================
 
-struct ZeroInflatedBetaBinomial{L<:Link} <: DualFamily end
+# (struct ZeroInflatedBetaBinomial is declared in families.jl)
 
 """
     zero_inflated_beta_binomial(; link = :logit)

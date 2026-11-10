@@ -21,8 +21,17 @@ struct Censored{F<:Family} <: Family
 end
 
 # count families: cdfs as sums of the family's own pmf (end of file), any link
-const _DISC_CENS = Union{Poisson,NegBinomial,Geometric,Binomial,BetaBinomial,NegBinomial2,DiscreteWeibull,ComPoisson}
-const _CENSORABLE = Union{Gaussian{IdentityLink},Lognormal,Weibull{LogLink},Exponential{LogLink},_DISC_CENS}
+const _DISC_CENS = Union{Poisson,NegBinomial,Geometric,Binomial,BetaBinomial,NegBinomial2,DiscreteWeibull,ComPoisson,
+                         ZeroInflatedPoisson,ZeroInflatedNegBinomial,ZeroInflatedBinomial,ZeroInflatedBetaBinomial,
+                         HurdlePoisson,HurdleNegBinomial}
+# continuous families with a generic log-cdf / log-ccdf (contcens.jl), dual-number
+# derivatives for the censored observations only
+const _CONT_CENS = Union{Student,SkewNormal,ShiftedLognormal,ExGaussian,InverseGaussian,GammaFamily,Frechet,
+                         AsymLaplace,ZeroInflatedAsymLaplace,BetaFamily,ZeroInflatedBeta,HurdleGamma,HurdleLognormal,VonMises}
+const _GEN_CENS = Union{_DISC_CENS,_CONT_CENS}
+# closed-form log-cdf derivatives below (their own fast censoring path)
+const _CLOSED_CENS = Union{Gaussian,Lognormal,Weibull,Exponential}
+const _CENSORABLE = Union{_CLOSED_CENS,_GEN_CENS}
 
 # delegation: a censored family is its base family for everything but the
 # likelihood of the censored observations
@@ -87,22 +96,30 @@ end
 _cv(::Gaussian, y, x) = y
 _cv(::Lognormal, y, x) = x                 # x = log y
 
-@inline function _lccdf_grad(f::Union{Gaussian,Lognormal}, y, x, mu, p)
+@inline function _lccdf_mu(f::Union{Gaussian,Lognormal}, y, x, mu, p)
     z = (_cv(f, y, x) - mu) * p.is
     r = mills(-z)                          # -d/dz log Phi(-z)
     return normlogcdf(-z), (r * p.is, r * z)
 end
-@inline function _lcdf_grad(f::Union{Gaussian,Lognormal}, y, x, mu, p)
+@inline function _lcdf_mu(f::Union{Gaussian,Lognormal}, y, x, mu, p)
     z = (_cv(f, y, x) - mu) * p.is
     r = mills(z)
     return normlogcdf(z), (-r * p.is, -r * z)
 end
-@inline function _lint_grad(f::Union{Gaussian,Lognormal}, y, x, x2, mu, p)
+@inline function _lint_mu(f::Union{Gaussian,Lognormal}, y, x, x2, mu, p)
     z1 = (_cv(f, y, x) - mu) * p.is
     z2 = (_cv(f, x2, x2) - mu) * p.is      # for gaussian x2 = y2; for lognormal x2 = log y2
     v, d2, d1 = _cum_mid(ProbitLink(), z2, z1)
     return v, (-(d1 + d2) * p.is, -(d1 * z1 + d2 * z2))
 end
+# any mean link: the formulas above at mu = linkinv(eta), d/d eta = d/d mu * mu_eta
+@inline _chain_mu(L, e, (v, g)) = (v, (g[1] * mu_eta(L, e), Base.tail(g)...))
+@inline _lccdf_grad(f::Union{Gaussian,Lognormal}, y, x, e, p) =
+    _chain_mu(link(f), e, _lccdf_mu(f, y, x, linkinv(link(f), e), p))
+@inline _lcdf_grad(f::Union{Gaussian,Lognormal}, y, x, e, p) =
+    _chain_mu(link(f), e, _lcdf_mu(f, y, x, linkinv(link(f), e), p))
+@inline _lint_grad(f::Union{Gaussian,Lognormal}, y, x, x2, e, p) =
+    _chain_mu(link(f), e, _lint_mu(f, y, x, x2, linkinv(link(f), e), p))
 
 # --- weibull: z = (y / lambda)^k, S(y) = exp(-z), log lambda = eta - lgamma(1 + 1/k) ---
 # dz/d eta = -k z;  dz/dk = z (log y - log lambda - digamma(1 + 1/k) / k)
@@ -113,16 +130,16 @@ end
     z = exp(k * d)
     return z, -k * z, z * (d - p.dg1 / k)
 end
-@inline function _lccdf_grad(::Weibull{LogLink}, y, ly, e, p)
+@inline function _lccdf_lm(::Weibull, y, ly, e, p)
     z, dze, dzk = _weibull_z(y, ly, e, p)
     return -z, (-dze, -dzk * p.k)
 end
-@inline function _lcdf_grad(::Weibull{LogLink}, y, ly, e, p)
+@inline function _lcdf_lm(::Weibull, y, ly, e, p)
     z, dze, dzk = _weibull_z(y, ly, e, p)
     r = 1 / expm1(z)                       # d/dz log(1 - exp(-z))
     return log1mexp(-z), (r * dze, r * dzk * p.k)
 end
-@inline function _lint_grad(::Weibull{LogLink}, y, ly, ly2, e, p)
+@inline function _lint_lm(::Weibull, y, ly, ly2, e, p)
     z1, d1e, d1k = _weibull_z(y, ly, e, p)
     z2, d2e, d2k = _weibull_z(exp(ly2), ly2, e, p)
     # log(exp(-z1) - exp(-z2)); d/dz1 = -w1, d/dz2 = w1 - 1
@@ -132,19 +149,30 @@ end
 end
 
 # --- exponential: z = y exp(-eta), S = exp(-z) --------------------------------------
-@inline function _lccdf_grad(::Exponential{LogLink}, y, x, e, p)
+@inline function _lccdf_lm(::Exponential, y, x, e, p)
     z = y * exp(-e)
     return -z, (z,)
 end
-@inline function _lcdf_grad(::Exponential{LogLink}, y, x, e, p)
+@inline function _lcdf_lm(::Exponential, y, x, e, p)
     z = y * exp(-e)
     return log1mexp(-z), (-z / expm1(z),)
 end
-@inline function _lint_grad(::Exponential{LogLink}, y, x, x2, e, p)
+@inline function _lint_lm(::Exponential, y, x, x2, e, p)
     z1 = y * exp(-e); z2 = x2 * exp(-e)   # x2 = y2 (exponential has no x data)
     w1 = -1 / expm1(z1 - z2)
     return -z1 + log1mexp(z1 - z2), (w1 * z1 - (w1 - 1) * z2,)
 end
+
+# weibull / exponential under any link: the formulas above take e = log mu;
+# chain d/d log mu by d log mu / d eta (exactly 1 for the log link)
+@inline function _chain_lm(f, e, g)
+    lm, c = _logmu_d(link(f), e)
+    v, gr = g(lm)
+    return v, (gr[1] * c, Base.tail(gr)...)
+end
+@inline _lccdf_grad(f::Union{Weibull,Exponential}, y, x, e, p) = _chain_lm(f, e, lm -> _lccdf_lm(f, y, x, lm, p))
+@inline _lcdf_grad(f::Union{Weibull,Exponential}, y, x, e, p) = _chain_lm(f, e, lm -> _lcdf_lm(f, y, x, lm, p))
+@inline _lint_grad(f::Union{Weibull,Exponential}, y, x, x2, e, p) = _chain_lm(f, e, lm -> _lint_lm(f, y, x, x2, lm, p))
 
 
 # --- count families: the cdf as a sum of the pmf --------------------------------------
@@ -203,18 +231,32 @@ _disc_lint(fam, y, y2, xb, eta, t) = _disc_lsum(fam, round(Int, y) + 1, round(In
     return T(ForwardDiff.value(r)), ntuple(k -> T(ForwardDiff.partials(r)[k]), Val(D))
 end
 
-_cens_x2(::_DISC_CENS, v) = Float64(v)
+_cens_x2(::_GEN_CENS, v) = Float64(v)
 _disc_cens_val(fam, code, y, y2, xb, eta, t) =
     code == 1 ? _disc_lccdf(fam, y, xb, eta, t) :
     code == -1 ? _disc_lcdf(fam, y, xb, eta, t) : _disc_lint(fam, y, y2, xb, eta, t)
+# continuous: right / left / interval from the family's log-cdf and log-ccdf
+_cont_cens_val(fam, code, y, y2, eta) =
+    code == 1 ? _cc_lccdf(fam, y, eta) : code == -1 ? _cc_lcdf(fam, y, eta) : _cc_lint(fam, y, y2, eta)
+_gen_cens_val(fam::_DISC_CENS, code, y, y2, xb, eta) = _disc_cens_val(fam, code, y, y2, xb, eta, _disc_t(fam, xb))
+_gen_cens_val(fam::Union{_CONT_CENS,_CLOSED_CENS}, code, y, y2, xb, eta) = _cont_cens_val(fam, code, y, y2, eta)
+# log(F(b) - F(a)) from whichever tail keeps the precision
+function _cc_lint(fam, a, b, eta)
+    lb = _cc_lcdf(fam, b, eta)
+    if lb < -_pv(lb, _LOG2)
+        return lb + log1mexp(_cc_lcdf(fam, a, eta) - lb)
+    end
+    ca = _cc_lccdf(fam, a, eta)
+    return ca + log1mexp(_cc_lccdf(fam, b, eta) - ca)
+end
+_cc_lccdf(fam, y, eta) = log1mexp(_cc_lcdf(fam, y, eta))
 
-@inline _pre(c::Censored{<:_DISC_CENS}, eta) = (Base.tail(eta), _pre(c.fam, eta))
-@inline function _ll_grad_pre(c::Censored{<:_DISC_CENS}, y, x, m, p)
+@inline _pre(c::Censored{<:_GEN_CENS}, eta) = (Base.tail(eta), _pre(c.fam, eta))
+@inline function _ll_grad_pre(c::Censored{<:_GEN_CENS}, y, x, m, p)
     aux, pb = p
     code = x[1]
     code == 0 && return _ll_grad_pre(c.fam, y, x[3], m, pb)
-    t = _disc_t(c.fam, x[3])
-    return _dual_vg(e -> _disc_cens_val(c.fam, code, y, x[2], x[3], e, t), (m, aux...))
+    return _dual_vg(e -> _gen_cens_val(c.fam, code, y, x[2], x[3], e), (m, aux...))
 end
-@inline _ll(c::Censored{<:_DISC_CENS}, y, x, eta) =
-    x[1] == 0 ? _ll(c.fam, y, x[3], eta) : _disc_cens_val(c.fam, x[1], y, x[2], x[3], eta, _disc_t(c.fam, x[3]))
+@inline _ll(c::Censored{<:_GEN_CENS}, y, x, eta) =
+    x[1] == 0 ? _ll(c.fam, y, x[3], eta) : _gen_cens_val(c.fam, x[1], y, x[2], x[3], eta)

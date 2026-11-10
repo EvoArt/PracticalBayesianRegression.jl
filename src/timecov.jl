@@ -520,38 +520,52 @@ end
 
 # the time structure of NEW rows (brms: the new data's own groups and times;
 # unstr's time levels must be training levels)
-function _tc_newfam(fit, newdata)
+function _tc_newfam(fit, newdata; newdata2=nothing, y=nothing)
     fam0 = fit.density.family
     f = fit.info.formula
-    ac = f.dpars[1].rhs.ar
     cols = Tables.columntable(newdata)
-    N = _nrows(cols)
+    return _ac_newtc(fam0, f.dpars[1].rhs.ar, cols, f.mod, _nrows(cols); newdata2, y)
+end
+# the structure of N new rows for a fitted structure tc0 (a TimeCov): their own
+# groups / times; unstr maps time points to the fitted levels; fcor / sar take
+# the new rows' matrix from `newdata2` (brms: newdata2 = list(W = ...))
+function _ac_newtc(tc0::TimeCov, ac, cols, mod, N; newdata2=nothing, y=nothing)
     vals = Dict{Atom,AbstractVector}()
-    ac[1] === nothing || (vals[ac[1]] = _eval_atom(ac[1], cols, f.mod))
-    ac[2] === nothing || (vals[ac[2]] = _eval_atom(ac[2], cols, f.mod))
-    fn = _timecov_family(fam0.fam, ac, vals, zeros(N), 1:N, N)
-    fam0.kind === :unstr || return fn
-    lv = [findfirst(==(l), fam0.tlabels) for l in fn.tlabels]
+    ac[1] === nothing || (vals[ac[1]] = _eval_atom(ac[1], cols, mod))
+    ac[2] === nothing || (vals[ac[2]] = _eval_atom(ac[2], cols, mod))
+    yy = y === nothing ? zeros(N) : Float64.(y)
+    if tc0.kind in (:fcor, :lagsar, :errorsar)
+        newdata2 === nothing && throw(ArgumentError("predictions for new data with $(tc0.kind) need the matrix for the new " *
+                                                   "rows: newdata2 = (; $(ac[6]) = ...)  ($N x $N)"))
+        old = _DATA2[]
+        _DATA2[] = (newdata2, mod)
+        try
+            return _timecov_family(tc0.fam, ac, vals, yy, 1:N, N)
+        finally
+            _DATA2[] = old
+        end
+    end
+    fn = _timecov_family(tc0.fam, ac, vals, yy, 1:N, N)
+    tc0.kind === :unstr || return fn
+    lv = [findfirst(==(l), tc0.tlabels) for l in fn.tlabels]
     any(isnothing, lv) && throw(ArgumentError("unstr(): new data has time points the model was not fitted with"))
-    return TimeCov(fn.fam, fn.kind, 0, 0, fn.perm, fn.beg, fam0.nmax, fn.M, fn.eig, fn.Wy, 0.0,
-                   Int[lv[k] for k in fn.tlev], fam0.tlabels)
+    return TimeCov(fn.fam, fn.kind, 0, 0, fn.perm, fn.beg, tc0.nmax, fn.M, fn.eig, fn.Wy, 0.0,
+                   Int[lv[k] for k in fn.tlev], tc0.tlabels)
 end
 
 function _tc_draws(fit, newdata, what::Symbol; rng=Random.default_rng(), re_formula=nothing,
-                   allow_new_levels=false, sample_new_levels=:uncertainty, kw...)
+                   allow_new_levels=false, sample_new_levels=:uncertainty, newdata2=nothing, kw...)
     ld = fit.density; fam = ld.family
     D = reshape(fit.draws, size(fit.draws, 1), :)
     if newdata === nothing
         y = Float64.(ld.y); N = ld.N
         means = θ -> _tc_draw(ld, θ)
     else
-        fam.kind in (:arma_cov, :cosy, :unstr) ||
-            throw(ArgumentError("predictions for new data are not supported with $(fam.kind) terms (its matrix belongs to the training rows)"))
         preds, N, _ = _prediction_preds(fit, newdata; re_formula, allow_new_levels)
         opts = _PredOpts(rng, Symbol(sample_new_levels))
-        fam = _tc_newfam(fit, newdata)
         f = fit.info.formula
         y = what === :log_lik ? Float64.(_eval_atom(f.response, Tables.columntable(newdata), f.mod)) : zeros(N)
+        fam = _tc_newfam(fit, newdata; newdata2, y)
         means = θ -> begin
             etas = map(p -> _eta_pred(p, θ, N, opts), preds)
             _, _, ν, ρ = _tc_draw(ld, θ)                      # structure / nu: from the draw alone
@@ -605,8 +619,18 @@ end
 
 _lac_rho(t::LatentAC, θ) = ntuple(k -> first(_btrans(t.lb[k], t.ub[k], θ[t.rho[k]])), length(t.rho))
 
+_lac_unstr(t::LatentAC) = t.tc.kind === :unstr
+# the structure parameters on their natural scale (constrain): rho, or unstr's correlations
+function _lac_natural(t::LatentAC, θ)
+    _lac_unstr(t) || return collect(_lac_rho(t, θ))
+    D = t.tc.nmax
+    L, _ = _cholcorr(θ[t.rho], D); R = L * L'
+    return [R[j, k] for k in 2:D for j in 1:(k - 1)]
+end
+
 # the residuals in data order (generic in the number type; NaN if R is not PD)
 function _lac_err(t::LatentAC, θ)
+    _lac_unstr(t) && return _lacu_err(t, θ)
     tc = t.tc
     s = exp(θ[t.sd]); ρ = _lac_rho(t, θ)
     E = promote_type(eltype(θ), typeof(float(ρ[1])))
@@ -625,6 +649,10 @@ end
 function _lac_prior(t::LatentAC, θ)
     u = θ[t.sd]
     lp = prior_kernel(t.sd_prior, exp(u)) + u - sum(abs2, θ[t.z]) / 2
+    if _lac_unstr(t)
+        L, lj = _cholcorr(θ[t.rho], t.tc.nmax)
+        return lp + lj + lkj_logpdf_chol(L, t.lkj)
+    end
     for k in eachindex(t.rho)
         x, _, lj, _ = _btrans(t.lb[k], t.ub[k], θ[t.rho[k]])
         lp += prior_kernel(t.rho_priors[k], x) + lj
@@ -638,6 +666,7 @@ _lac_generic(t::LatentAC, θ) = (_lac_err(t, θ), _lac_prior(t, θ))
 # the structure-parameter count K goes through a literal Val branch, and all
 # arithmetic is in eltype(θ) -- never a dual on this path)
 function _lac_forward!(η::AbstractVector{T}, t::LatentAC, θ::AbstractVector{T}) where {T}
+    _lac_unstr(t) && (_lacu_forward!(η, t, θ); return η)
     K = length(t.rho)
     K == 1 ? _lac_forward!(η, t, θ, Val(1)) : _lac_forward!(η, t, θ, Val(2))
     return η
@@ -665,6 +694,7 @@ function _lac_forward!(η::AbstractVector{T}, t::LatentAC, θ::AbstractVector{T}
 end
 
 function _lac_pullback!(g::AbstractVector{T}, t::LatentAC, w::AbstractVector{T}, θ) where {T}
+    _lac_unstr(t) && return _lacu_pullback!(g, t, w, θ)::T
     K = length(t.rho)
     lp = K == 1 ? _lac_pullback!(g, t, w, θ, Val(1), T) : _lac_pullback!(g, t, w, θ, Val(2), T)
     return lp::T
@@ -712,4 +742,119 @@ function _lac_pullback!(g, t::LatentAC, w, θ, ::Val{K}, ::Type{T}) where {K,T}
         lp -= θ[k]^2 / 2
     end
     return lp
+end
+
+# --- latent unstr() (brms scale_time_err_flex): per group with time levels J,
+#     err = sderr chol(R[J, J]) zerr,   R = Lc Lc' an LKJ correlation over the levels.
+# Reverse pass: with ebar = d ll / d err and C = chol(R[J, J]),
+#     d/d zerr = sderr C' ebar,  d/d log sderr = ebar' err,  d/d C = sderr ebar zerr' (lower),
+# Cholesky adjoint (Murray 2016): S = C^-T Phi(C' Cbar) C^-1, Phi = lower triangle with
+# the diagonal halved; d/d R[J, J] = (S + S') / 2, scattered into G; then
+# d/d Lc = (G + G') Lc and the LKJ block's own reverse pass (_corr_value_grad!).
+function _lacu_err(t::LatentAC, θ)
+    tc = t.tc; D = tc.nmax
+    s = exp(θ[t.sd])
+    L, _ = _cholcorr(θ[t.rho], D); R = L * L'
+    E = promote_type(eltype(θ), eltype(R))
+    err = zeros(E, length(t.z))
+    for g in 1:(length(tc.beg) - 1)
+        r = tc.beg[g]:(tc.beg[g + 1] - 1); J = tc.tlev[r]
+        C = cholesky(Symmetric(R[J, J], :L); check=false)
+        issuccess(C) || return fill(E(NaN), length(t.z))
+        err[tc.perm[r]] .= s .* (Matrix(C.L) * θ[t.z[r]])
+    end
+    return err
+end
+function _lacu_forward!(η::AbstractVector{T}, t::LatentAC, θ::AbstractVector{T}) where {T}
+    tc = t.tc; D = tc.nmax
+    L = zeros(T, D, D); _cholcorr!(L, view(θ, t.rho)); R = L * L'
+    s = exp(θ[t.sd])
+    for g_ in 1:(length(tc.beg) - 1)
+        r = tc.beg[g_]:(tc.beg[g_ + 1] - 1); J = tc.tlev[r]
+        C = cholesky(Symmetric(R[J, J], :L); check=false)
+        if !issuccess(C)
+            fill!(η, T(NaN)); return nothing
+        end
+        v = Matrix{T}(C.L) * θ[t.z[r]]
+        @inbounds for k in eachindex(r)
+            η[tc.perm[r[k]]] += s * v[k]
+        end
+    end
+    return nothing
+end
+@inline function _phi_lower!(A::AbstractMatrix)
+    n = size(A, 1)
+    @inbounds for j in 1:n
+        A[j, j] /= 2
+        for i in 1:(j - 1)
+            A[i, j] = zero(eltype(A))
+        end
+    end
+    return A
+end
+function _lacu_pullback!(g::AbstractVector{T}, t::LatentAC, w::AbstractVector{T}, θ) where {T}
+    tc = t.tc; D = tc.nmax
+    L = zeros(T, D, D); _cholcorr!(L, view(θ, t.rho)); R = L * L'
+    u = θ[t.sd]; s = exp(u)
+    G = zeros(T, D, D); gsd = zero(T)
+    for g_ in 1:(length(tc.beg) - 1)
+        r = tc.beg[g_]:(tc.beg[g_ + 1] - 1); J = tc.tlev[r]
+        C = cholesky(Symmetric(R[J, J], :L); check=false)
+        issuccess(C) || return T(NaN)
+        Cl = Matrix{T}(C.L)
+        z = T[θ[t.z[k]] for k in r]
+        eb = T[w[tc.perm[k]] for k in r]
+        v = Cl * z
+        gsd += dot(eb, v)
+        gz = Cl' * eb
+        @inbounds for k in eachindex(r)
+            g[t.z[r[k]]] += s * gz[k]
+        end
+        Cbar = s .* (eb * z')
+        P = _phi_lower!(Cl' * LowerTriangular(Cbar))
+        S = LowerTriangular(Cl)' \ (P / LowerTriangular(Cl))
+        G[J, J] .+= (S .+ S') ./ 2
+    end
+    A = (G .+ G') * L
+    gc = zeros(T, length(t.rho))
+    val = _corr_value_grad!(gc, A, view(θ, t.rho), D, t.lkj)
+    @inbounds for (j, k) in enumerate(t.rho)
+        g[k] += gc[j]
+    end
+    vs, ds = prior_kernel_grad(t.sd_prior, s)
+    g[t.sd] += s * gsd + s * ds + 1                 # + 1: log-Jacobian of exp
+    lp = vs + u + val
+    @inbounds for k in t.z
+        g[k] -= θ[k]
+        lp -= θ[k]^2 / 2
+    end
+    return lp
+end
+
+# new latent residuals for new rows (brms prepare_predictions_ac with new data:
+# err ~ MVN(0, sderr^2 R) per group of the new rows' structure tcn)
+function _lac_draw_new(t::LatentAC, tcn::TimeCov, θ, rng)
+    s = exp(θ[t.sd]); N = length(tcn.perm)
+    err = zeros(N)
+    if _lac_unstr(t)
+        L, _ = _cholcorr(θ[t.rho], t.tc.nmax); R = L * L'
+    else
+        ρ = _lac_rho(t, θ)
+        C = cholesky(Symmetric(_tc_R(tcn, ρ, tcn.nmax), :L); check=false)
+        issuccess(C) || return fill(NaN, N)
+        Lr = Matrix(C.L)
+    end
+    for g in 1:(length(tcn.beg) - 1)
+        r = tcn.beg[g]:(tcn.beg[g + 1] - 1); n = length(r)
+        Lg = if _lac_unstr(t)
+            J = tcn.tlev[r]
+            Cg = cholesky(Symmetric(R[J, J], :L); check=false)
+            issuccess(Cg) || return fill(NaN, N)
+            Matrix(Cg.L)
+        else
+            Lr[1:n, 1:n]
+        end
+        err[tcn.perm[r]] .= s .* (Lg * randn(rng, n))
+    end
+    return err
 end

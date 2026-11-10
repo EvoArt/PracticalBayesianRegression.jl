@@ -397,7 +397,7 @@ end
 
 function _recipe_unsupported(f::BrmsFormula, fam, info, user)
     bad = String[]
-    f.nl && push!(bad, "non-linear formulas")
+    (f.nl || haskey(f.extra, :nlf)) && push!(bad, "non-linear formulas")
     f.cens === nothing || push!(bad, "cens()")
     for k in keys(f.extra)
         push!(bad, "addition term $(k)()")

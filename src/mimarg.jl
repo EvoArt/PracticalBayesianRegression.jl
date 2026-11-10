@@ -262,6 +262,8 @@ function _mi_plan(forms, fams, resp, mode::Symbol)
             j = users[1]
             ok = fams[k] isa Gaussian{IdentityLink} &&
                  all(d -> isempty(d.rhs.mi), forms[k].dpars) &&                      # no chained mi()
+                 all(d -> all(isnothing, d.rhs.miidx), forms[j].dpars) &&            # rows shared (no idx)
+                 !haskey(forms[k].extra, :subset) && !haskey(forms[j].extra, :subset) &&
                  count(==(v), _mi_vars(forms[j].dpars[1].rhs)) == 1 &&               # once, in mu ...
                  !any(d -> v in _mi_vars(d.rhs), forms[j].dpars[2:end]) &&           # ... only
                  forms[j].dpars[1].dpar === :mu && !forms[j].nl && _marg_family_ok(fams[j])

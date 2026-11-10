@@ -339,7 +339,7 @@ function _cg_loglik(ld::GLMDensity, θraw)
     elseif ld.family isa GenExtremeValue
         xi = _gev_xi_generic(ld, etas)
         for i in 1:ld.N
-            v = _gev_ll(ld.y[i], _at(etas[1], i), _at(etas[2], i), xi)
+            v = _gev_ll(ld.y[i], linkinv(link(ld.family), _at(etas[1], i)), _at(etas[2], i), xi)
             s += isempty(ld.weights) ? v : ld.weights[i] * v
         end
     end
@@ -443,6 +443,9 @@ function _cg_linkinv(L::Link, e::String)
     L isa CloglogLink && return "1 .- exp.(.-exp.($e))"
     L isa InverseLink && return "inv.($e)"
     L isa SqrtLink && return "$e .^ 2"
+    L isa SoftplusLink && return "log1p.(exp.($e))"
+    L isa SquareplusLink && return "($e .+ sqrt.($e .^ 2 .+ 4)) ./ 2"
+    L isa CauchitLink && return "atan.($e) ./ π .+ 0.5"
     _cg_unsupported("the $(link_name(L)) link")
 end
 
@@ -720,6 +723,7 @@ _cg_subst(ex::Expr, m::Dict{Symbol,String}) =
 
 function _cg_nl!(g::_CG, p::NLPred, info)
     f = info isa ModelInfo ? info.formula : nothing
+    p.dpar === :mu || _cg_unsupported("nlf() (a non-linear distributional parameter)")
     (f isa BrmsFormula && f.nl) || _cg_unsupported("a non-linear model without its formula")
     ex = _cg_try(() -> Meta.parse("(" * f.text * ",)"), nothing)
     (ex isa Expr && ex.head === :tuple && _is_tilde(ex.args[1])) ||
@@ -1084,8 +1088,16 @@ function _cg_group!(g::_CG, gb::GroupBlock, sfx::String)
         JM = _cg_arg!(g, _cg_fresh!(g, "JM_" * tag), Matrix{Int}(gb.mmJ))
         W = _cg_arg!(g, _cg_fresh!(g, "W_" * tag), Matrix{Float64}(gb.mmW))
         parts = String[]
+        same = all(m -> gb.mmZt[:, :, m] == gb.Zt, axes(gb.mmJ, 2))
         for m in axes(gb.mmJ, 2)
-            inner = join([zpart(k, "$JM[:, $m]") for k in 1:qm], " .+ ")
+            if same
+                inner = join([zpart(k, "$JM[:, $m]") for k in 1:qm], " .+ ")
+            else
+                # mmc(): member m's own Z
+                Zmm = _cg_arg!(g, _cg_fresh!(g, "Z_$(tag)_$m"), permutedims(Matrix{Float64}(gb.mmZt[:, :, m])))
+                rk(k) = nm.simple ? "$r[$JM[:, $m]]" : "$r[$(gb.rows[k]), $JM[:, $m]]"
+                inner = join(["$(rk(k)) .* $Zmm[:, $k]" for k in 1:qm], " .+ ")
+            end
             push!(parts, "$W[:, $m] .* ($inner)")
         end
         return join(parts, " .+ ")
@@ -1220,6 +1232,7 @@ end
 # err[group] = sderr * L_n * zerr[group], L = chol(R(rho)), zerr in (gr, time) order
 function _cg_lac!(g::_CG, t::LatentAC, pre::String)
     tc = t.tc
+    tc.kind === :unstr && _cg_unsupported("latent unstr() (non-gaussian families)")
     tag = _cg_fresh!(g, "lac" * pre)
     sd, z, err = "sderr_" * tag, "zerr_" * tag, "err_" * tag
     push!(g.used, sd, z, err, "R_" * tag, "C_" * tag, "T_" * tag)
@@ -1364,6 +1377,7 @@ function _cg_glm!(g::_CG, ld::GLMDensity, info; withlik::Bool=true)
             _cg_line!(g)
             continue
         elseif p isa BhazSimplex
+            _btrunc(p) && _cg_unsupported("cox with trunc()")
             # cox: baseline hazard weights on the M-/I-spline bases, a simplex (brms sbhaz)
             sb = _cg_fresh!(g, "sbhaz")
             K = _K(p); kb = p.idx
@@ -1413,7 +1427,7 @@ function _cg_glm!(g::_CG, ld::GLMDensity, info; withlik::Bool=true)
         # the density positive at every standardised residual
         push!(g.used, "x_gev", "b1_gev", "b2_gev", "xi")
         _cg_line!(g, "# gev shape: brms rescales tmp_xi so every observation is inside the support")
-        _cg_line!(g, "x_gev = (y .- $(linkof[1])) .* exp.(-$(linkof[2]))")
+        _cg_line!(g, "x_gev = (y .- $(_cg_linkinv(link(fam), linkof[1]))) .* exp.(-$(linkof[2]))")
         _cg_line!(g, "b1_gev = -1 / minimum(x_gev); b2_gev = -1 / maximum(x_gev)")
         _cg_line!(g, "xi = inv(1 + exp(-tmp_xi)) * (max(b1_gev, b2_gev) - min(b1_gev, b2_gev)) + min(b1_gev, b2_gev)")
         _cg_line!(g)

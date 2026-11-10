@@ -511,18 +511,24 @@ struct MiTerm{T}
     # likelihood is the marginal one, and ymi[] then points at generated draws
     # beyond the sampled θ (filled after sampling, used by predictions)
     marg::Bool
+    bnd::Base.RefValue{Tuple{Float64,Float64}}   # bounds of the imputed values (x's family, brms's Ymi)
+    # mi(x, idx) (brms): the idx value of each row (empty for plain mi(x)), and which of
+    # x's missing values each entry of Jmi uses (empty: the k-th, rows shared)
+    idxv::Vector{Any}
+    kmap::Base.RefValue{Vector{Int}}
 end
+@inline _mik(m::MiTerm, k) = (km = m.kmap[]; isempty(km) ? k : @inbounds km[k])
 @inline function _mi_value(m::MiTerm, θ, n, k)
     return k > 0 ? θ[m.ymi[][k]] : m.x[n]
 end
 function _mi_forward!(η, m::MiTerm, θ)
-    b = θ[m.bsp]; r = m.ymi[]
+    b = θ[m.bsp]; r = m.ymi[]; lb, ub = m.bnd[]
     @inbounds for n in eachindex(η)
         isnan(m.x[n]) || (η[n] += b * m.x[n])        # missing rows: below, from θ
     end
     m.marg && return η
     @inbounds for (k, n) in enumerate(m.Jmi)
-        η[n] += b * θ[r[k]]
+        η[n] += b * first(_btrans(lb, ub, θ[r[_mik(m, k)]]))
     end
     return η
 end
@@ -533,9 +539,12 @@ function _mi_pullback!(g, m::MiTerm, w, θ)
     @inbounds for n in eachindex(w)
         isnan(m.x[n]) || (gb += w[n] * m.x[n])
     end
+    lb, ub = m.bnd[]
     m.marg || @inbounds for (k, n) in enumerate(m.Jmi)
-        gb += w[n] * θ[r[k]]
-        g[r[k]] += b * w[n]
+        rk = r[_mik(m, k)]
+        xv, dx, _, _ = _btrans(lb, ub, θ[rk])
+        gb += w[n] * xv
+        g[rk] += b * w[n] * dx
     end
     v, d = prior_kernel_grad(m.bsp_prior, b)
     g[m.bsp] += gb + d
@@ -546,8 +555,11 @@ function _mi_generic(m::MiTerm, θ)
     # integrated out: no value inside the sampled θ (0 here); predictions get
     # θ extended by the generated draws, which do hold the imputed values
     gen = m.marg && (isempty(m.ymi[]) || last(m.ymi[]) > length(θ))
+    lb, ub = m.bnd[]
     for (k, n) in enumerate(m.Jmi)
-        xl[n] = gen ? zero(eltype(xl)) : θ[m.ymi[][k]]
+        # (generated draws are on the natural scale already; sampled ones are bounded θ)
+        rk = m.ymi[][_mik(m, k)]
+        xl[n] = gen ? zero(eltype(xl)) : m.marg ? θ[rk] : first(_btrans(lb, ub, θ[rk]))
     end
     return θ[m.bsp] .* xl, prior_kernel(m.bsp_prior, θ[m.bsp])
 end
@@ -578,6 +590,7 @@ struct CarTerm{T}
     rho::Int                       # bym2 rhocar / escar car (logit scale), 0 otherwise
     sd_prior::ScalarPrior
     rho_prior::ScalarPrior
+    levels::Vector{String}         # gr's sorted labels -> locations (empty: gr is the row of W)
 end
 
 function _car_edges(W)

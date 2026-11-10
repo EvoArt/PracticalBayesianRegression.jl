@@ -41,7 +41,14 @@
         @test "b_nsx31" in variables(f) && "b_bszdfEQ44" in variables(f)
         @test posterior_epred(f; newdata=(; x=TD.x[1:4], z=TD.z[1:4])) ≈ posterior_epred(f)[:, 1:4]
         @test_throws ArgumentError PG.build_model(@bf(yg ~ bs(x, df = 2)), TD)
-        @test_throws ArgumentError PG.build_model(@bf(yg ~ ns(x, knots = 3)), TD)
+        @test_throws ArgumentError PG.build_model(@bf(yg ~ ns(x, knots = 30)), TD)    # outside the data range
+        # R's knots = / Boundary.knots =: interior knots override df
+        sbk = PG.SplineBasis(xs, false, 0, 3; knots=[3.0, 6.5])
+        @test sbk.knots == vcat(fill(1.0, 4), [3.0, 6.5], fill(10.0, 4)) && PG._basis_ncol(sbk) == 5
+        nbk = PG.SplineBasis(xs, true, 0, 3; knots=[4.0], bknots=[0.0, 12.0])
+        @test nbk.lo == 0.0 && nbk.hi == 12.0 && PG._basis_ncol(nbk) == 2
+        ldk, _ = PG.build_model(@bf(yg ~ bs(x, knots = c(-0.5, 0.5)) + ns(z, df = 3, Boundary.knots = c(-4, 4))), TD)
+        @test any(startswith("b_bsxknotsEQc"), PG.variables(ldk)) && count(startswith("b_bsx"), PG.variables(ldk)) == 5
     end
 
     @testset "poly() matches R's stats::poly" begin

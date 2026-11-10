@@ -88,15 +88,18 @@ struct RHS
     mi::Vector{Atom}                 # mi(x): a predictor imputed by its own model (multivariate)
     car::Vector{Any}                 # car(W, gr = loc, type = ): (W expression, gr atom, type)
     moint::Vector{Vector{Atom}}      # interaction terms with mo(): mo(x):z, mo(x1):mo(x2) (atoms as written)
+    miidx::Vector{Any}               # per mi(x, idx): the idx atom (nothing for plain mi(x))
 end
+RHS(intercept, terms, groups, offsets, mo, ar, sm, cs, me, gp, mi, car, moint) =
+    RHS(intercept, terms, groups, offsets, mo, ar, sm, cs, me, gp, mi, car, moint, Any[nothing for _ in mi])
 RHS(intercept, terms, groups, offsets, mo, ar, sm, cs, me, gp, mi, car) =
     RHS(intercept, terms, groups, offsets, mo, ar, sm, cs, me, gp, mi, car, Vector{Atom}[])
 RHS(intercept, terms, groups, offsets) =
     RHS(intercept, terms, groups, offsets, Atom[], nothing, Any[], Vector{Atom}[], Tuple{Atom,Atom,String}[], Any[], Atom[], Any[])
 RHS(intercept, terms, groups, offsets, mo, ar, sm) =
     RHS(intercept, terms, groups, offsets, mo, ar, sm, Vector{Atom}[], Tuple{Atom,Atom,String}[], Any[], Atom[], Any[])
-_with_intercept(r::RHS, b::Bool) = RHS(b, r.terms, r.groups, r.offsets, r.mo, r.ar, r.sm, r.cs, r.me, r.gp, r.mi, r.car, r.moint)
-_with_offsets(r::RHS, offs) = RHS(r.intercept, r.terms, r.groups, offs, r.mo, r.ar, r.sm, r.cs, r.me, r.gp, r.mi, r.car, r.moint)
+_with_intercept(r::RHS, b::Bool) = RHS(b, r.terms, r.groups, r.offsets, r.mo, r.ar, r.sm, r.cs, r.me, r.gp, r.mi, r.car, r.moint, r.miidx)
+_with_offsets(r::RHS, offs) = RHS(r.intercept, r.terms, r.groups, offs, r.mo, r.ar, r.sm, r.cs, r.me, r.gp, r.mi, r.car, r.moint, r.miidx)
 # an atom written as mo(x)
 _is_mo(a::Atom) = a.ex isa Expr && a.ex.head == :call && a.ex.args[1] === :mo
 
@@ -269,8 +272,91 @@ function Base.:+(f::BrmsFormula, l::LinearFormulas)
         push!(dps, DparFormula(d, _parse_rhs(e.args[3])))
     end
     text = join(vcat(f.text, [_strip_spaces(string(_fix_precedence(e))) for e in l.exs]), ", ")
-    return BrmsFormula(f.response, f.trials, f.weights, f.cens, f.cens_y2, dps, f.mod, text, f.nl, f.nlfun,
-                       f.nlpars, f.nlvars, f.extra)
+    g = BrmsFormula(f.response, f.trials, f.weights, f.cens, f.cens_y2, dps, f.mod, text, f.nl, f.nlfun,
+                    f.nlpars, f.nlvars, f.extra)
+    # parameter formulas of an nlf() given afterwards: recompile its function
+    return haskey(f.extra, :nlf_raw) ? _with_nlf(g, f.extra[:nlf_raw]) : g
+end
+
+# --- nlf(): a non-linear formula for a distributional parameter (brms nlf) -------
+struct NLFormula
+    ex::Any                  # `dpar ~ expression` (a plain Julia expression, as nl = true)
+    parforms::Vector{Any}    # formulas of its parameters given with it
+end
+
+"""
+    nlf(dpar_formula, parameter_formulas...)
+    @nlf(sigma ~ a * exp(b * x), a ~ 1, b ~ 1)
+
+A non-linear formula for a distributional parameter, added to a model with `+`,
+as brms's `nlf()`: `@bf(y ~ x) + @nlf(sigma ~ a * exp(b * x), a ~ 1, b ~ 1)`.
+The right-hand side is a Julia expression; its parameters are the symbols that
+have formulas (here or added later with `lf`), everything else is data. The
+expression is compiled when it is added (as the string form of `bf`), so code
+that builds the formula and calls `brm` inside one function needs
+`Base.invokelatest`. The parameters need proper priors (`nlpar = :a`), as brms.
+"""
+nlf(exs...) = (raw = map(e -> e isa AbstractString ? Meta.parse(e) : e, exs);
+               NLFormula(raw[1], Any[raw[2:end]...]))
+macro nlf(exs...)
+    return :($(@__MODULE__).nlf($(map(QuoteNode, exs)...)))
+end
+function _nlf_compile(f::BrmsFormula, ex)
+    d = ex.args[2]; rhs = ex.args[3]
+    known = Set(x.dpar for x in f.dpars)
+    syms = _free_symbols(rhs)
+    pars = Symbol[s for s in syms if s in known]
+    isempty(pars) && return nothing          # parameter formulas not given yet (a later lf())
+    vars = Symbol[s for s in syms if !(s in known)]
+    fun = Core.eval(f.mod, Expr(:->, Expr(:tuple, pars..., vars...), rhs))
+    return (dpar=d, fun=fun, pars=pars, vars=vars)
+end
+function _with_nlf(f::BrmsFormula, raw)
+    extra = copy(f.extra)
+    extra[:nlf_raw] = raw
+    g = BrmsFormula(f.response, f.trials, f.weights, f.cens, f.cens_y2, f.dpars, f.mod, f.text, f.nl, f.nlfun,
+                    f.nlpars, f.nlvars, extra)
+    extra[:nlf] = Any[e for e in (_nlf_compile(g, r) for r in raw) if e !== nothing]
+    return g
+end
+function Base.:+(f::BrmsFormula, n::NLFormula)
+    ex = _fix_precedence(n.ex)
+    (_is_tilde(ex) && ex.args[2] isa Symbol) || throw(ArgumentError("nlf(): expected `dpar ~ expression`, got `$ex`"))
+    d = ex.args[2]
+    d === :mu && throw(ArgumentError("nlf(mu ~ ...): give a non-linear mean as bf(...; nl = true)"))
+    raw = Any[get(f.extra, :nlf_raw, Any[])...]
+    (any(x -> x.dpar === d, f.dpars) || any(e -> e.args[2] === d, raw)) && throw(ArgumentError("`$d` has two formulas"))
+    push!(raw, n.ex)
+    g = isempty(n.parforms) ? f : f + LinearFormulas(n.parforms)
+    text = join(vcat(f.text, _strip_spaces(string(n.ex)), [_strip_spaces(string(e)) for e in n.parforms]), ", ")
+    g = BrmsFormula(g.response, g.trials, g.weights, g.cens, g.cens_y2, g.dpars, g.mod, text, g.nl, g.nlfun,
+                    g.nlpars, g.nlvars, g.extra)
+    return _with_nlf(g, raw)
+end
+_nlf_entries(f::BrmsFormula) = get(f.extra, :nlf, Any[])
+_nlf_entry(f::BrmsFormula, d::Symbol) = (k = findfirst(e -> e.dpar === d, _nlf_entries(f)); k === nothing ? nothing : _nlf_entries(f)[k])
+# every non-linear parameter / data variable, of the mean and of nlf() dpars
+_nl_allpars(f::BrmsFormula) = vcat(f.nlpars, (e.pars for e in _nlf_entries(f))...)
+_nl_allvars(f::BrmsFormula) = unique(vcat(f.nlvars, (e.vars for e in _nlf_entries(f))...))
+
+struct _SetNL
+    flag::Bool
+end
+
+"""
+    set_nl(flag = true)
+
+brms's `set_nl`: read the formula as non-linear, the same as `bf(...; nl = true)`:
+`bf("y ~ a * exp(b * x)", "a ~ 1", "b ~ 1") + set_nl()`. The formula is re-read
+from its text and the mean function compiled then (as the string form of `bf`).
+"""
+set_nl(flag::Bool=true) = _SetNL(flag)
+function Base.:+(f::BrmsFormula, s::_SetNL)
+    s.flag == f.nl && return f
+    s.flag || throw(ArgumentError("set_nl(false): build the formula without nl = true instead"))
+    haskey(f.extra, :nlf_raw) && throw(ArgumentError("set_nl(): add nlf() terms after set_nl()"))
+    g = bf(split(f.text, ", ")...; mod=f.mod, nl=true, center=get(f.extra, :center, true))
+    return haskey(f.extra, :mecor) ? g + set_mecor(f.extra[:mecor]) : g
 end
 
 struct _SetMecor
@@ -429,7 +515,7 @@ function _parse_lhs(lhs)
             elseif name === :mi
                 # y | mi(): missing values of y are parameters (brms); needs a gaussian/student y
                 extra[:mi] = true
-            elseif name === :thres
+            elseif name in (:thres, :cat)          # cat(): brms's older name of thres()
                 # y | thres(3), thres(gr = g), thres(3, gr = g): the number of
                 # thresholds and/or one set of thresholds per level of g (brms)
                 n = nothing; tg = nothing
@@ -449,9 +535,31 @@ function _parse_lhs(lhs)
             elseif name in (:vreal, :vint)
                 # y | vreal(a, b) / vint(n): extra data for a custom family's log density (brms)
                 append!(get!(extra, :vars, Atom[]), [_atom(a) for a in add.args[2:end]])
+            elseif name === :index
+                # y | index(id): identifies this response's rows for mi(y, idx) in other formulas (brms)
+                extra[:index] = _atom(add.args[2])
             elseif name === :subset
                 # y | subset(s): this response uses only the rows where s is true (multivariate models)
                 extra[:subset] = _atom(add.args[2])
+            elseif name === :bhaz
+                # cox: y | bhaz(df = , knots = , Boundary.knots = ) (brms; splines2 M-splines)
+                bh = Dict{Symbol,Any}()
+                for a in add.args[2:end]
+                    a isa Expr && a.head == :kw || throw(ArgumentError("bhaz() takes keyword arguments"))
+                    k = a.args[1]
+                    if k === :df
+                        bh[:df] = Int(_numconst(a.args[2]))
+                    elseif k === :knots
+                        bh[:knots] = _numvec(a.args[2])
+                    elseif _is_bknots_kw(k)
+                        bh[:bknots] = _numvec(a.args[2])
+                    elseif k === :intercept
+                        a.args[2] in (true, :TRUE, :T) || throw(ArgumentError("bhaz(intercept = FALSE) is not supported"))
+                    else
+                        throw(ArgumentError("bhaz(): unsupported argument `$k` (df, knots, Boundary.knots)"))
+                    end
+                end
+                extra[:bhaz] = bh
             elseif name === :trunc
                 lb, ub = -Inf, Inf
                 for a in add.args[2:end]
@@ -492,11 +600,12 @@ mutable struct _RHSState
     gp::Vector{Any}
     mi::Vector{Atom}
     car::Vector{Any}
+    miidx::Vector{Any}
 end
 
 function _parse_rhs(ex)
     st = _RHSState(true, Vector{Atom}[], GroupTerm[], Atom[], Atom[], nothing, Any[], Vector{Atom}[],
-                   Tuple{Atom,Atom,String}[], Any[], Atom[], Any[])
+                   Tuple{Atom,Atom,String}[], Any[], Atom[], Any[], Any[])
     _walk!(st, ex, true)
     # products containing mo() (mo(x):z, mo(x1):mo(x2), and the mo(x) of mo(x) * z)
     # are monotonic terms, not design columns (brms)
@@ -509,7 +618,7 @@ function _parse_rhs(ex)
     end
     filter!(t -> length(t) > 1, moint)
     return RHS(st.intercept, terms, st.groups, st.offsets, st.mo, st.ar, st.sm,
-               _normalise_terms(st.cs), st.me, st.gp, st.mi, st.car, moint)
+               _normalise_terms(st.cs), st.me, st.gp, st.mi, st.car, moint, st.miidx)
 end
 
 # `positive` is false inside the right operand of a binary minus, where the
@@ -586,8 +695,12 @@ function _walk!(st, ex, positive)
             push!(st.car, (W, gr, type))
             return
         elseif f === :mi
-            length(ex.args) == 2 || throw(ArgumentError("mi() takes one variable: mi(x)"))
+            # mi(x) or mi(x, idx): idx holds, per row, the index() value of x's row to use (brms)
+            (2 <= length(ex.args) <= 3) || throw(ArgumentError("mi() takes a variable and optionally idx: mi(x, idx)"))
             push!(st.mi, _atom(ex.args[2]))
+            idx = length(ex.args) == 3 ? ex.args[3] : nothing
+            idx isa Expr && idx.head == :kw && (idx = idx.args[2])
+            push!(st.miidx, idx === nothing ? nothing : _atom(idx))
             return
         elseif f === :gp
             # gp(x, z, ...; k = , c = , scale = ): squared-exponential GP (brms defaults)
@@ -628,7 +741,7 @@ function _walk!(st, ex, positive)
             return
         elseif f in (:s, :t2)
             # s(x, z, k = , by = ) thin-plate splines, t2(x, z, k = ) tensor products (splines.jl)
-            covs = Atom[]; k = nothing; by = nothing; bs = :tp
+            covs = Atom[]; k = nothing; by = nothing; bs = :tp; xt = nothing
             for a in ex.args[2:end]
                 if a isa Expr && a.head == :kw
                     kw, v = a.args
@@ -638,7 +751,11 @@ function _walk!(st, ex, positive)
                         by = _atom(v)
                     elseif kw === :bs && f === :s
                         bs = Symbol(strip(string(v), '"'))
-                        bs in (:tp, :cr, :ps, :cc, :ts, :cs, :re) || throw(ArgumentError("s(): bs = \"$bs\" is not supported yet (tp, ts, cr, cs, ps, cc, re; t2() for tensor products)"))
+                        bs in (:tp, :cr, :ps, :cc, :ts, :cs, :re, :fs, :cp, :bs, :gp, :mrf) ||
+                            throw(ArgumentError("s(): bs = \"$bs\" is not supported yet (tp, ts, cr, cs, ps, cc, cp, bs, gp, re, fs, mrf; t2() for tensor products)"))
+                    elseif kw === :xt && f === :s
+                        # fs's base basis (xt = "cr"; mgcv's default "tp"), or mrf's list(nb = ...) / list(penalty = ...)
+                        xt = v
                     else
                         throw(ArgumentError("$f(): unsupported argument `$kw`"))
                     end
@@ -649,7 +766,15 @@ function _walk!(st, ex, positive)
             isempty(covs) && throw(ArgumentError("$f() needs at least one covariate"))
             # brms's sds coef is the term as written: s(x, bs = "cr", k = 6)
             text = string(ex)
-            push!(st.sm, (f, covs, k, by, text, bs))
+            if bs === :fs
+                xt = xt === nothing ? :tp : Symbol(strip(string(xt), '"'))
+                xt in (:tp, :cr) || throw(ArgumentError("s(): xt = \"$xt\" is not supported (fs bases: tp, cr)"))
+            elseif bs === :mrf
+                xt === nothing && throw(ArgumentError("s(..., bs = \"mrf\") needs xt = list(nb = NB) or xt = list(penalty = P)"))
+            else
+                xt === nothing || throw(ArgumentError("s(): xt is only used with bs = \"fs\" or \"mrf\" here"))
+            end
+            push!(st.sm, (f, covs, k, by, text, bs, xt === nothing ? :tp : xt))
             return
         end
     elseif ex isa Expr && ex.head == :||

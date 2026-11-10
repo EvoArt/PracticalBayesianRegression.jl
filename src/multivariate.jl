@@ -437,7 +437,7 @@ function build_mv_model(formula, data; family=gaussian(), prior=PriorSpec[], T::
     hassub = [haskey(f.extra, :subset) for f in mvf.forms]
     if any(hassub)
         mvf.rescor === true && throw(ArgumentError("subset() cannot be combined with residual correlations (brms)"))
-        isempty(mivars) || throw(ArgumentError("subset() together with mi() is not supported yet"))
+        # (mi() across responses with different rows: brms's mi(x, idx) + index(), linked below)
     end
     subrows(k) = hassub[k] ? findall(v -> v isa Bool ? v : !iszero(v),
                                      _eval_atom(mvf.forms[k].extra[:subset], sub, mvf.forms[k].mod)) : nothing
@@ -479,8 +479,31 @@ function build_mv_model(formula, data; family=gaussian(), prior=PriorSpec[], T::
                 k = findfirst(==(m.var), resp)
                 k === nothing && throw(ArgumentError("mi($(m.var)): `$(m.var)` needs its own formula `$(m.var) | mi() ~ ...`"))
                 src = built[k][1]
-                src.Jmi == m.Jmi || throw(ArgumentError("mi($(m.var)): the missing rows do not match"))
+                if !isempty(m.idxv)
+                    # mi(x, idx): row n uses x's row whose index() value is idx[n] (brms idxl)
+                    fk = mvf.forms[k]
+                    haskey(fk.extra, :index) ||
+                        throw(ArgumentError("mi($(m.var), idx): `$(m.var)`'s formula needs `| index(...)` (brms)"))
+                    rk = subrows(k)
+                    xidx = _eval_atom(fk.extra[:index], rk === nothing ? sub : map(c -> c[rk], sub), fk.mod)
+                    allunique(xidx) || throw(ArgumentError("index(): values must be unique"))
+                    loc = Dict(v => i for (i, v) in enumerate(xidx))
+                    pos = map(m.idxv) do v
+                        haskey(loc, v) || throw(ArgumentError("mi($(m.var), idx): idx value `$v` is not an index() value of `$(m.var)`"))
+                        loc[v]
+                    end
+                    kpos = Dict(n => j for (j, n) in enumerate(src.Jmi))
+                    for (n, p) in enumerate(pos)
+                        m.x[n] = haskey(kpos, p) ? oftype(m.x[n], NaN) : src.y[p]
+                    end
+                    empty!(m.Jmi); append!(m.Jmi, [n for (n, p) in enumerate(pos) if haskey(kpos, p)])
+                    m.kmap[] = [kpos[pos[n]] for n in m.Jmi]
+                else
+                    src.Jmi == m.Jmi || throw(ArgumentError("mi($(m.var)): the missing rows do not match " *
+                                                            "(responses with different rows need mi(x, idx) and index(), as brms)"))
+                end
                 m.ymi[] = src.ymi
+                m.bnd[] = _mi_bounds(src.family)
             end
         end
     end

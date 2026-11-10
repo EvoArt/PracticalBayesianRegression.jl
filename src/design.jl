@@ -127,7 +127,7 @@ function _atom_info(a::Atom, v)
     nonmissingtype(eltype(v)) <: Real ||
         throw(ArgumentError("$(a.ex.args[1])() needs a numeric variable"))
     pa === nothing || return AtomInfo(nothing, PolyBasis(v, pa[2], pa[3]))
-    return AtomInfo(nothing, SplineBasis(v, sa[2], sa[3], sa[4]))
+    return AtomInfo(nothing, SplineBasis(v, sa[2], sa[3], sa[4]; knots=sa[5], bknots=sa[6]))
 end
 
 # Classify a column. Anything not a (non-Bool) Real is a factor, matching R,
@@ -186,7 +186,9 @@ function _interp(ex::Expr, cols, mod)
         # Returned as one row vector per observation so it passes through the
         # complete-case filter like any other atom; a row with any missing
         # entry is itself `missing`, so the whole row is dropped.
-        if f === :cbind
+        # mmc(x1, x2) (member-specific covariates of mm()) is held the same way;
+        # the group term picks member m's column (_mmc_member)
+        if f === :cbind || f === :mmc
             cs = map(a -> _interp(a, cols, mod), ex.args[2:end])
             return [any(c -> ismissing(c[i]), cs) ? missing : [c[i] for c in cs] for i in 1:_nrows(cols)]
         end

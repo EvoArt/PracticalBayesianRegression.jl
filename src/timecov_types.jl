@@ -35,5 +35,6 @@ struct LatentAC{T}
     z::UnitRange{Int}                     # N, in (gr, time) order
     sd_prior::ScalarPrior
     rho_priors::Vector{ScalarPrior}
-    names::Vector{String}                 # "ar[1]", "ma[1]", "cosy"
+    names::Vector{String}                 # "ar[1]", "ma[1]", "cosy"; unstr: cortime__t1__t2
+    lkj::Float64                          # unstr: LKJ concentration of cortime (rho = its CPC parameters)
 end

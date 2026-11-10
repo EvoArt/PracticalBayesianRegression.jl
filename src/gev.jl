@@ -14,7 +14,7 @@
 
 dpars(::GenExtremeValue) = (:mu, :sigma, :xi)
 aux_bounds(::GenExtremeValue, d::Symbol) = d === :xi ? (:identity, -Inf) : (:log, 0.0)
-dpar_link_name(::GenExtremeValue, d::Symbol) = d === :mu ? "identity" : d === :xi ? "identity (scaled)" : "log"
+dpar_link_name(f::GenExtremeValue, d::Symbol) = d === :mu ? link_name(link(f)) : d === :xi ? "identity (scaled)" : "log"
 _ll_const(::GenExtremeValue, y, t) = 0.0
 """
     gen_extreme_value(; link = :identity)
@@ -47,15 +47,18 @@ function _gev_xi(tmp, xmin, xmax)
     return xi, dtmp, db1 / xmin^2, db2 / xmax^2        # d b1/d xmin = 1/xmin^2, d b2/d xmax = 1/xmax^2
 end
 
-_gev_mu(etas, i) = _at(etas[1], i)
+# mu on its natural scale (any of brms's links) and d mu / d eta
+_gev_mu(L, etas, i) = linkinv(L, _at(etas[1], i))
+_gev_dmu(L, etas, i) = mu_eta(L, _at(etas[1], i))
 _gev_ls(etas, i) = _at(etas[2], i)
 
 function _obs_loop!(ld::GLMDensity{F,P,W,T}, etas) where {F<:GenExtremeValue,P,W,T}
     y, N = ld.y, ld.N
+    L = link(ld.family)
     foreach(_reset!, ld.ws, ld.preds)
     xmin, imin, xmax, imax = T(Inf), 0, T(-Inf), 0
     @inbounds for i in 1:N
-        x = (y[i] - _gev_mu(etas, i)) * exp(-_gev_ls(etas, i))
+        x = (y[i] - _gev_mu(L, etas, i)) * exp(-_gev_ls(etas, i))
         x < xmin && (xmin = x; imin = i)
         x > xmax && (xmax = x; imax = i)
     end
@@ -65,7 +68,7 @@ function _obs_loop!(ld::GLMDensity{F,P,W,T}, etas) where {F<:GenExtremeValue,P,W
     wv = map(pw -> pw.w, ld.ws)
     ll = zero(T); gxi = zero(T)
     @inbounds for i in 1:N
-        mu, ls = _gev_mu(etas, i), _gev_ls(etas, i)
+        mu, ls = _gev_mu(L, etas, i), _gev_ls(etas, i)
         d = ForwardDiff.Dual{Nothing}
         r = _gev_ll(y[i], d(mu, (one(T), zero(T), zero(T))), d(ls, (zero(T), one(T), zero(T))),
                     d(xi, (zero(T), zero(T), one(T))))
@@ -73,14 +76,14 @@ function _obs_loop!(ld::GLMDensity{F,P,W,T}, etas) where {F<:GenExtremeValue,P,W
         wt = weighted ? ld.weights[i] : one(T)
         ll += wt * v
         gxi += wt * p[3]
-        _puts!(wv, ld.preds, i, (T(p[1]), T(p[2]), zero(T)), wt)
+        _puts!(wv, ld.preds, i, (T(p[1]) * _gev_dmu(L, etas, i), T(p[2]), zero(T)), wt)
     end
     # xi -> tmp_xi, and the extremes' share through the bounds
     _put!(wv[3], ld.preds[3], 1, gxi * dtmp)
     for (i, dx) in ((imin, dxmin), (imax, dxmax))
         g = gxi * dx
-        s = exp(-_gev_ls(etas, i)); x = (y[i] - _gev_mu(etas, i)) * s
-        _gev_addw!(wv[1], ld.preds[1], i, -g * s)         # d x / d mu = -1/sigma
+        s = exp(-_gev_ls(etas, i)); x = (y[i] - _gev_mu(L, etas, i)) * s
+        _gev_addw!(wv[1], ld.preds[1], i, -g * s * _gev_dmu(L, etas, i))   # d x / d mu = -1/sigma
         _gev_addw!(wv[2], ld.preds[2], i, -g * x)         # d x / d log sigma = -x
     end
     return ll
@@ -91,7 +94,8 @@ _gev_addw!(w, ::LinPred, i, v) = (@inbounds w[i] += v; nothing)
 _gev_addw!(w, ::ScalarDpar, i, v) = (@inbounds w[1] += v; nothing)
 
 function _gev_xi_generic(ld, etas)
-    xs = [(ld.y[i] - _at(etas[1], i)) * exp(-_at(etas[2], i)) for i in 1:ld.N]
+    L = link(ld.family)
+    xs = [(ld.y[i] - linkinv(L, _at(etas[1], i))) * exp(-_at(etas[2], i)) for i in 1:ld.N]
     return first(_gev_xi(_at(etas[3], 1), minimum(xs), maximum(xs)))
 end
 function LogDensityProblems.logdensity(ld::GLMDensity{F}, θraw::AbstractVector) where {F<:GenExtremeValue}
@@ -100,7 +104,7 @@ function LogDensityProblems.logdensity(ld::GLMDensity{F}, θraw::AbstractVector)
     xi = _gev_xi_generic(ld, etas)
     lp = ljo
     for i in 1:(ld.prior_only ? 0 : ld.N)
-        v = _gev_ll(ld.y[i], _at(etas[1], i), _at(etas[2], i), xi)
+        v = _gev_ll(ld.y[i], linkinv(link(ld.family), _at(etas[1], i)), _at(etas[2], i), xi)
         lp += isempty(ld.weights) ? v : ld.weights[i] * v
     end
     for p in ld.preds
@@ -111,14 +115,14 @@ end
 
 # per-observation functions take xi itself in the third slot (predict.jl
 # substitutes the scaled xi of each draw)
-_ll(::GenExtremeValue, y, x, eta) = _gev_ll(y, eta[1], eta[2], eta[3])
-function _mean(::GenExtremeValue, eta, t)
-    mu, s, xi = eta[1], exp(eta[2]), eta[3]
+_ll(f::GenExtremeValue, y, x, eta) = _gev_ll(y, linkinv(link(f), eta[1]), eta[2], eta[3])
+function _mean(f::GenExtremeValue, eta, t)
+    mu, s, xi = linkinv(link(f), eta[1]), exp(eta[2]), eta[3]
     abs(xi) < 1e-12 && return mu + s * Base.MathConstants.eulergamma
     return xi < 1 ? mu + s * (exp(loggamma(1 - xi)) - 1) / xi : Inf
 end
-function _rand(rng, ::GenExtremeValue, eta, t)
-    mu, s, xi = eta[1], exp(eta[2]), eta[3]
+function _rand(rng, f::GenExtremeValue, eta, t)
+    mu, s, xi = linkinv(link(f), eta[1]), exp(eta[2]), eta[3]
     u = rand(rng)
     abs(xi) < 1e-12 && return mu - s * log(-log(u))
     return mu + s * ((-log(u))^(-xi) - 1) / xi

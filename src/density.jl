@@ -81,6 +81,7 @@ struct GroupBlock{T}
     # mm(g1, g2): every observation belongs to several levels, with weights
     mmJ::Matrix{Int}         # N x M level indices (0 x 0 unless multi-membership)
     mmW::Matrix{T}           # N x M weights
+    mmZt::Array{T,3}         # q x N x M: member m's Z (transposed); differs by member only with mmc()
     # gr(g, dist = "student") (brms): level j's effects are scaled by
     # dfm_j = sqrt(df * udf_j), udf_j ~ inv_chi_square(df), df ~ gamma(2, 0.1) on (1, Inf);
     # θ holds log(df - 1) and log(udf_j)
@@ -93,12 +94,18 @@ struct GroupBlock{T}
 end
 function GroupBlock{T}(label, idx, levels, Z, coefs, sd, corr, z, sd_priors, lkj;
                        rows=1:size(Z, 2), role=0, sid=0, jlabels=String[], bylevel="", sdsfx="",
-                       mmJ=zeros(Int, 0, 0), mmW=zeros(T, 0, 0), df=0, udf=1:0, df_prior=flat(),
+                       mmJ=zeros(Int, 0, 0), mmW=zeros(T, 0, 0), mmZ=nothing, df=0, udf=1:0, df_prior=flat(),
                        Lcov=zeros(T, 0, 0)) where {T}
     Zm = Matrix{T}(Z)
     unit = size(Zm, 2) == 1 && all(isone, Zm) && isempty(mmJ)
+    # mm(): one Z per member (the block's Z for each unless mmc() gives its own)
+    M = size(mmJ, 2)
+    mmZt = zeros(T, size(Zm, 2), size(Zm, 1), M)
+    for m in 1:M
+        mmZt[:, :, m] .= permutedims(mmZ === nothing ? Zm : mmZ[m])
+    end
     return GroupBlock{T}(label, idx, levels, Zm, permutedims(Zm), unit, coefs, sd, corr, z, sd_priors, lkj,
-                         rows, role, sid, jlabels, bylevel, sdsfx, mmJ, T.(mmW), df, udf, df_prior, Matrix{T}(Lcov))
+                         rows, role, sid, jlabels, bylevel, sdsfx, mmJ, T.(mmW), mmZt, df, udf, df_prior, Matrix{T}(Lcov))
 end
 _hascov(gb::GroupBlock) = !isempty(gb.Lcov)
 _student(gb::GroupBlock) = gb.df > 0
@@ -370,7 +377,9 @@ end
 # from everything (so sampling is unaffected), and stored draws are
 # overwritten with the constant afterwards (`_order_draws!`).
 
-_convert_x(::Type{T}, xd) where {T} = isempty(xd) ? T[] : map(v -> v isa Tuple ? map(T, v) : T(v), xd)
+# (recursive: a wrapper's data tuple can hold its base family's own tuple, e.g. censored beta)
+_convert_x1(::Type{T}, v) where {T} = v isa Tuple ? map(e -> _convert_x1(T, e), v) : T(v)
+_convert_x(::Type{T}, xd) where {T} = isempty(xd) ? T[] : map(v -> _convert_x1(T, v), xd)
 
 """
     fresh_workspace(ld) -> GLMDensity
@@ -608,12 +617,12 @@ end
 function _group_eta!(η, gb::GroupBlock, gw::GroupWS)
     R, idx, r0 = gw.R, gb.idx, first(gb.rows) - 1
     if _ismm(gb)
-        Zt, q = gb.Zt, _qm(gb)
+        Zt, q = gb.mmZt, _qm(gb)
         @inbounds for i in eachindex(η), m in axes(gb.mmJ, 2)
             j = gb.mmJ[i, m]; wt = gb.mmW[i, m]
             s = zero(eltype(η))
             for k in 1:q
-                s += Zt[k, i] * R[r0 + k, j]
+                s += Zt[k, i, m] * R[r0 + k, j]
             end
             η[i] += wt * s
         end
@@ -812,11 +821,11 @@ function _group_pullback!(g, gb::GroupBlock, gw::GroupWS{T}, w, θ) where {T}
     G, M, idx, r0 = gw.G, gw.M, gb.idx, first(gb.rows) - 1
     gb.role == 0 && fill!(G, zero(T))      # shared blocks were zeroed by their first member
     if _ismm(gb)
-        Zt = gb.Zt
+        Zt = gb.mmZt
         @inbounds for i in eachindex(w), m in axes(gb.mmJ, 2)
             j = gb.mmJ[i, m]; wi = w[i] * gb.mmW[i, m]
             for k in 1:_qm(gb)
-                G[r0 + k, j] += Zt[k, i] * wi
+                G[r0 + k, j] += Zt[k, i, m] * wi
             end
         end
     elseif gb.unitZ
@@ -1022,22 +1031,44 @@ function _lg_body!(g::AbstractVector{T}, ld::GLMDensity{F,P,W,T}, θ::AbstractVe
     return ll + lp
 end
 
-# y | mi(): the missing responses are θ[ymi]. For the (location) families this
-# allows, d ll / d y = -d ll / d mu, read off mu's per-observation derivative.
+# y | mi(): the missing responses are θ[ymi], on brms's bounded scale for the
+# family (Ymi <lower = 0> for positive responses, (0, 1) for beta, (-pi, pi) for
+# von_mises: Stan's transforms with their log-Jacobians). For the gaussian /
+# student location families d ll / d y = -d ll / d mu, read off mu's
+# per-observation derivative; otherwise one dual-number pass per missing value
+# (the family data that depends on y, e.g. log y, is refreshed first).
+_mi_bounds(::Family) = (-Inf, Inf)
+_mi_bounds(::Union{GammaFamily,Lognormal,Weibull,InverseGaussian,Frechet,Exponential}) = (0.0, Inf)
+_mi_bounds(::BetaFamily) = (0.0, 1.0)
+_mi_bounds(::VonMises) = (-Float64(π), Float64(π))
+_mi_location(fam) = fam isa Union{Gaussian{IdentityLink},Student{IdentityLink}}
+function _mi_dy(ld::GLMDensity, etas, n)
+    fam = ld.family
+    eta = map(e -> _at(e, n), etas)
+    d = ForwardDiff.derivative(v -> _ll(fam, v, _convert_x1(typeof(v), _xone(fam, v)), eta), ld.y[n])
+    return isempty(ld.weights) ? d : ld.weights[n] * d
+end
 function _lg_body_mi!(g::AbstractVector{T}, ld::GLMDensity{F,P,W,T}, θ::AbstractVector{T}) where {F,P,W,T}
+    lb, ub = _mi_bounds(ld.family)
+    ljac = zero(T)
     @inbounds for (k, n) in enumerate(ld.Jmi)
-        ld.y[n] = θ[ld.ymi[k]]
+        v, _, lj, _ = _btrans(lb, ub, θ[ld.ymi[k]])
+        ld.y[n] = v
+        ljac += lj
+        isempty(ld.xdata) || (ld.xdata[n] = _convert_x1(T, _xone(ld.family, v)))
     end
     fill!(g, zero(T))
     etas = map((pw, p) -> _eta!(pw, p, θ), ld.ws, ld.preds)
     ll = ld.prior_only ? (foreach(pw -> fill!(pw.w, zero(T)), ld.ws); zero(T)) : _obs_loop!(ld, etas)
     wmu = ld.ws[1].w
-    gy = [-wmu[n] for n in ld.Jmi]
+    gy = _mi_location(ld.family) ? T[-wmu[n] for n in ld.Jmi] :
+         T[ld.prior_only ? zero(T) : T(_mi_dy(ld, etas, n)) for n in ld.Jmi]
     lp = _pullbacks!(g, ld.preds, ld.ws, θ)
     @inbounds for (k, j) in enumerate(ld.ymi)
-        g[j] += gy[k]
+        _, dx, _, dlj = _btrans(lb, ub, θ[j])
+        g[j] += gy[k] * dx + dlj
     end
-    return ll + lp
+    return ll + lp + ljac
 end
 
 function LogDensityProblems.logdensity_and_gradient(ld::GLMDensity{F,P,W,T}, θ::AbstractVector{T}) where {F,P,W,T}
@@ -1077,7 +1108,7 @@ function _eta_generic(p::LinPred, θ, N)
         for i in 1:N
             if _ismm(gb)
                 for m in axes(gb.mmJ, 2)
-                    η[i] += gb.mmW[i, m] * sum(gb.Z[i, k] * R[gb.rows[k], gb.mmJ[i, m]] for k in 1:_qm(gb))
+                    η[i] += gb.mmW[i, m] * sum(gb.mmZt[k, i, m] * R[gb.rows[k], gb.mmJ[i, m]] for k in 1:_qm(gb))
                 end
                 continue
             end
@@ -1198,14 +1229,20 @@ function LogDensityProblems.logdensity(ld::GLMDensity, θraw::AbstractVector)
     T = eltype(θ)
     ll = ljo
     yv = ld.y
-    if _mi_sampled(ld)                       # y | mi(): the imputed responses
+    misrow = Dict{Int,Int}()
+    if _mi_sampled(ld)                       # y | mi(): the imputed responses (bounded scale)
+        lb, ub = _mi_bounds(ld.family)
         yv = Vector{promote_type(eltype(θ), eltype(ld.y))}(ld.y)
         for (k, n) in enumerate(ld.Jmi)
-            yv[n] = θ[ld.ymi[k]]
+            v, _, lj, _ = _btrans(lb, ub, θ[ld.ymi[k]])
+            yv[n] = v; ll += lj
+            misrow[n] = k
         end
     end
     for i in 1:(ld.prior_only ? 0 : ld.N)
-        v = _ll(ld.family, yv[i], _xd(ld, i), map(e -> _at(e, i), etas))
+        # (an imputed response's family data, e.g. log y, from the imputed value)
+        x = haskey(misrow, i) && !isempty(ld.xdata) ? _xone(ld.family, yv[i]) : _xd(ld, i)
+        v = _ll(ld.family, yv[i], x, map(e -> _at(e, i), etas))
         ll += isempty(ld.weights) ? v : ld.weights[i] * v
     end
     lp = ll
@@ -1426,7 +1463,7 @@ function constrain(ld::GLMDensity, θ::AbstractVector)
     end
     for p in lps, t in p.lac
         push!(out, exp(θ[t.sd]))
-        append!(out, collect(_lac_rho(t, θ)))
+        append!(out, _lac_natural(t, θ))
     end
     for p in lps, t in p.car
         push!(out, exp(θ[t.sd]))
@@ -1458,6 +1495,8 @@ function constrain(ld::GLMDensity, θ::AbstractVector)
     for p in lps, sb in p.smooths
         append!(out, exp(θ[sb.sds]) .* θ[sb.zs])
     end
-    append!(out, θ[ld.ymi])
+    # sampled imputations on their bounded scale; generated (integrated-out) draws as they are
+    lbm, ubm = _mi_bounds(ld.family)
+    append!(out, _mi_sampled(ld) ? [first(_btrans(lbm, ubm, θ[k])) for k in ld.ymi] : θ[ld.ymi])
     return out
 end

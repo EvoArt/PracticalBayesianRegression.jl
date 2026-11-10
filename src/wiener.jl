@@ -24,18 +24,20 @@ Wiener{L}() where {L} = Wiener{L}(Float64[], Inf)
     wiener(; link = :identity)
 
 brms's `wiener()` family (drift-diffusion); the response needs `| dec(d)`.
+Links for the drift `mu`: `identity` (default), `log`, `softplus`, `squareplus`.
 """
 function wiener(; link=nothing)
     l = link === nothing ? :identity : Symbol(link)
-    l === :identity || throw(ArgumentError("wiener: mu's link must be identity"))
-    return Wiener{IdentityLink}()
+    l in (:identity, :log, :softplus, :squareplus) ||
+        throw(ArgumentError("family wiener supports links identity, log, softplus, squareplus, not `$l`"))
+    return Wiener{typeof(_link(l))}()
 end
 link(::Wiener{L}) where {L} = L()
 family_name(::Wiener) = "wiener"
 dpars(::Wiener) = (:mu, :bs, :ndt, :bias)
 aux_bounds(::Wiener, d::Symbol) = d === :bias ? (:logit, 0.0) : d === :ndt ? (:logit, 0.0) : (:log, 0.0)
 aux_ub(f::Wiener, d::Symbol) = d === :ndt ? f.miny : 1.0
-dpar_link_name(::Wiener, d::Symbol) = d === :mu ? "identity" : d === :bias ? "logit" : "log"
+dpar_link_name(f::Wiener, d::Symbol) = d === :mu ? link_name(link(f)) : d === :bias ? "logit" : "log"
 _with_dec(f::Wiener{L}, dec, y) where {L} = Wiener{L}(Float64.(dec), minimum(y))
 _xdata(f::Wiener, y, trials) = f.dec
 function _check_response(f::Wiener, y, t)
@@ -80,7 +82,7 @@ function _wiener_lower(t, v, a, τ, w)
 end
 
 function _ll(f::Wiener, y, d, eta)
-    v = eta[1]; a = exp(eta[2]); τ = _pv(eta[3], f.miny) * logistic(eta[3]); w = logistic(eta[4])
+    v = linkinv(link(f), eta[1]); a = exp(eta[2]); τ = _pv(eta[3], f.miny) * logistic(eta[3]); w = logistic(eta[4])
     return d == 1 ? _wiener_lower(y, -v, a, τ, 1 - w) : _wiener_lower(y, v, a, τ, w)
 end
 _ll_const(::Wiener, y, t) = 0.0
@@ -97,7 +99,7 @@ _mean(::Wiener, eta, t) = throw(ArgumentError("posterior_epred is not defined fo
 # returns the response time with the boundary sign in its `negative_rt` option --
 # here the time, as posterior_predict's default
 function _rand(rng, f::Wiener, eta, t)
-    v = eta[1]; a = exp(eta[2]); τ = _pv(eta[3], f.miny) * logistic(eta[3]); w = logistic(eta[4])
+    v = linkinv(link(f), eta[1]); a = exp(eta[2]); τ = _pv(eta[3], f.miny) * logistic(eta[3]); w = logistic(eta[4])
     x = a * w; s = 0.0; dt = 1e-4; sq = sqrt(dt)
     while 0 < x < a
         x += v * dt + sq * randn(rng); s += dt

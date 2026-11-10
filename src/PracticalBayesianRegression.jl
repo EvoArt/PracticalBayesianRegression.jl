@@ -24,6 +24,7 @@ import Distributions
 import SpecialFunctions
 import PSIS
 import StatsAPI
+using StatsAPI: vcov, nobs        # re-exported (the StatsAPI functions, so no clash with StatsBase)
 import Serialization
 using PrettyTables: pretty_table, TextHighlighter, TextTableFormat, TextTableStyle, AnsiTextCell,
                     text_table_borders__unicode_rounded, fmt__printf
@@ -40,6 +41,7 @@ include("links.jl")
 include("families.jl")
 include("special.jl")
 include("splines.jl")
+include("smooths_extra.jl")   # mgcv cp / bs / gp / mrf smooths
 include("gp.jl")
 include("horseshoe.jl")
 include("r2d2.jl")
@@ -58,6 +60,7 @@ include("mixture.jl")
 include("multicat.jl")
 include("cox.jl")
 include("gev.jl")
+include("contcens.jl")   # log-cdfs of the continuous families (cens / trunc)
 include("timecov.jl")
 include("build.jl")
 include("nuts.jl")
@@ -72,6 +75,8 @@ include("averaging.jl")
 include("bridge.jl")
 include("smooths_post.jl")
 include("extras.jl")       # get_prior, VarCorr, loo_predict, pp_mixture, accessors
+include("brmsapi.jl")      # vcov, ngrps, reloo, kfold_predict, make_conditions, ...
+include("rdists.jl")       # brms's d/p/q/r distribution functions
 include("effects.jl")
 include("plots.jl")
 include("codegen.jl")
@@ -79,7 +84,7 @@ include("csvio.jl")       # model binaries: CSV in / draws out
 include("recipe.jl")      # model structure without data; trimmable assembly
 include("binary.jl")      # build_binary and the executable's driver
 
-export @bf, bf, @lf, lf, set_mecor, brm, build_model, sample_model, BrmsFit, BrmsFormula
+export @bf, bf, @lf, lf, @nlf, nlf, set_nl, set_mecor, brm, build_model, sample_model, BrmsFit, BrmsFormula
 export set_rescor, MVFormula, BrmsMVFit, build_mv_model
 export prior, PriorSpec, prior_summary, lkj
 export gaussian, student, lognormal, bernoulli, beta_binomial, poisson, negbinomial, geometric
@@ -89,7 +94,24 @@ export hurdle_poisson, hurdle_negbinomial, hurdle_gamma, hurdle_lognormal, cumul
 export skew_normal, exgaussian, inverse_gaussian, frechet, shifted_lognormal
 export mixture
 export com_poisson, hurdle_cumulative, multinomial, dirichlet, cox, gen_extreme_value, xbeta, logistic_normal
-export asym_laplace, von_mises, zero_inflated_beta, zero_one_inflated_beta, discrete_weibull, negbinomial2
+export dirichlet_multinomial, dirichlet2
+export loo_subsample, LOOSubsampleResult, vcov, nobs, logLik, ngrps, nvariables, as_draws_matrix, as_draws_df, mvbf, loo_moment_match, reloo
+export loo_predictive_interval, loo_model_weights, kfold_predict, make_conditions
+export logit_scaled, inv_logit_scaled, logm1, expp1
+export dasym_laplace, dbeta_binomial, ddirichlet, dexgaussian, dfrechet, dgen_extreme_value
+export dhurdle_gamma, dhurdle_lognormal, dhurdle_negbinomial, dhurdle_poisson, dinv_gaussian
+export dlogistic_normal, dmulti_normal, dmulti_student_t, dshifted_lnorm, dskew_normal, dstudent_t
+export dvon_mises, dwiener, dzero_inflated_beta, dzero_inflated_beta_binomial
+export dzero_inflated_binomial, dzero_inflated_negbinomial, dzero_inflated_poisson, pasym_laplace
+export pbeta_binomial, pexgaussian, pfrechet, pgen_extreme_value, phurdle_gamma, phurdle_lognormal
+export phurdle_negbinomial, phurdle_poisson, pinv_gaussian, pshifted_lnorm, pskew_normal
+export pstudent_t, pvon_mises, pzero_inflated_beta, pzero_inflated_beta_binomial
+export pzero_inflated_binomial, pzero_inflated_negbinomial, pzero_inflated_poisson, qasym_laplace
+export qfrechet, qgen_extreme_value, qshifted_lnorm, qskew_normal, qstudent_t, rasym_laplace
+export rbeta_binomial, rdirichlet, rexgaussian, rfrechet, rgen_extreme_value, rinv_gaussian
+export rlogistic_normal, rmulti_normal, rmulti_student_t, rshifted_lnorm, rskew_normal, rstudent_t
+export rvon_mises, rwiener
+export asym_laplace, zero_inflated_asym_laplace, von_mises, zero_inflated_beta, zero_one_inflated_beta, discrete_weibull, negbinomial2
 export custom_family, wiener, zero_inflated_beta_binomial
 export brm_multiple, combine_fits, model_weights, posterior_average, pp_average
 export posterior_interval, predictive_interval, predictive_error

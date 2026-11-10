@@ -50,6 +50,8 @@ end
 const TD = make_testdata()
 # a ring of four locations for the car() tests
 const WCAR = [0 1 0 1; 1 0 1 0; 0 1 0 1; 1 0 1 0]
+# s(g, bs = "mrf"): a ring of g's six levels (a..f), as a neighbour list
+const NBMRF = [[2, 6], [1, 3], [2, 4], [3, 5], [4, 6], [5, 1]]
 # gr(g, cov = ACOV): a known covariance among g's six levels (sorted a..f)
 const ACOV = [exp(-abs(i - j) / 2) for i in 1:6, j in 1:6]
 # fcor(): a known residual covariance (tridiagonal, positive definite) over the rows of TD;
@@ -194,6 +196,8 @@ const GRAD_CASES = [
     ("fcor", @bf(yg ~ x + fcor(MFCOR)), gaussian()),
     ("unstr", @bf(yg ~ x + unstr(time = ut, gr = ug)), gaussian()),
     ("unstr_student_het", @bf(yg ~ x + unstr(ut, ug), sigma ~ z), student()),
+    ("unstr_pois", @bf(yp ~ x + unstr(ut, ug)), poisson()),
+    ("unstr_bern_ri", @bf(yb ~ x + (1 | g) + unstr(time = ut, gr = ug)), bernoulli()),
     ("fcor_student_het", @bf(yg ~ x + fcor(MFCOR), sigma ~ z), student()),
     ("sar_lag", @bf(yg ~ x + sar(WSAR)), gaussian()),
     ("sar_error", @bf(yg ~ x + sar(WSAR, type = "error")), gaussian()),
@@ -279,13 +283,89 @@ const GRAD_CASES = [
     ("rsplines", @bf(yg ~ ns(x, 4) + bs(z, df = 5, degree = 2) + (1 | g)), gaussian()),
     ("smooth_k", @bf(yp ~ s(x, k = 6) + s(z)), poisson()),
     ("smooth_distrib", @bf(yg ~ s(x), sigma ~ s(z, k = 5)), gaussian()),
+    ("smooth_fs", @bf(yg ~ s(x, g, bs = "fs", k = 5)), gaussian()),
+    ("smooth_cp", @bf(yp ~ s(x, bs = "cp")), poisson()),
+    ("smooth_mbs", @bf(yg ~ z + s(x, bs = "bs")), gaussian()),
+    ("smooth_mgp", @bf(yg ~ s(x, bs = "gp", k = 8)), gaussian()),
+    ("smooth_mrf", @bf(yp ~ x + s(g, bs = "mrf", xt = list(nb = NBMRF))), poisson()),
+    ("smooth_fs_cr", @bf(yp ~ z + s(x, h, bs = "fs", xt = "cr", k = 6)), poisson()),
+    # brms 2.23's full link sets for the families that had only their default
+    # (links whose inverse stays in the support for any θ)
+    ("geometric_softplus", @bf(yp ~ x + (1 | g)), geometric(; link=:softplus)),
+    ("weibull_softplus", @bf(ya ~ x), weibull(; link=:softplus)),
+    ("exponential_squareplus", @bf(ya ~ x), exponential(; link=:squareplus)),
+    ("zip_softplus", @bf(yp ~ x, zi ~ z), zero_inflated_poisson(; link=:softplus)),
+    ("zinb_squareplus", @bf(yp ~ x), zero_inflated_negbinomial(; link=:squareplus)),
+    ("zib_probit", @bf(yn | trials(n) ~ x + (1 | g)), zero_inflated_binomial(; link=:probit)),
+    ("hurdle_pois_softplus", @bf(yp ~ x), hurdle_poisson(; link=:softplus)),
+    ("hurdle_nb_squareplus", @bf(yp ~ x, hu ~ z), hurdle_negbinomial(; link=:squareplus)),
+    ("hurdle_gamma_softplus", @bf(yh ~ x), hurdle_gamma(; link=:softplus)),
+    ("hurdle_lognormal_inverse", @bf(yh ~ x), hurdle_lognormal(; link=:inverse)),
+    ("skew_normal_log", @bf(yg ~ x + (1 | g)), skew_normal(; link=:log)),
+    ("exgaussian_softplus", @bf(ya ~ x), exgaussian(; link=:softplus)),
+    ("frechet_softplus", @bf(ya ~ x), frechet(; link=:softplus)),
+    ("shifted_lognormal_inverse", @bf(ya ~ x), shifted_lognormal(; link=:inverse)),
+    ("discrete_weibull_probit", @bf(yp ~ x), discrete_weibull(; link=:probit)),
+    ("com_poisson_softplus", @bf(yp ~ x), com_poisson(; link=:softplus)),
+    ("gev_softplus", @bf(yg ~ x, sigma ~ z), gen_extreme_value(; link=:softplus)),
+    ("cox_softplus", @bf(ya | cens(ccox) ~ x + (1 | g)), cox(; link=:softplus)),
+    ("cox_bhaz", @bf(ya | cens(ccox) + bhaz(df = 7) ~ x), cox()),
+    ("cox_trunc", @bf(ya | cens(ccox) + trunc(ub = 6) ~ x + (1 | g)), cox()),
+    ("cox_trunc_both", @bf(ya | trunc(lb = 0.02, ub = 6) ~ x), cox(; link=:softplus)),
+    ("cox_bhaz_knots", @bf(ya | bhaz(knots = c(0.5, 1.0), Boundary.knots = c(0, 4)) ~ x), cox()),
+    ("wiener_log", @bf(yrt | dec(dd) ~ x), wiener(; link=:log)),
+    ("cens_weibull_softplus", @bf(ya | cens(cc, ya2) ~ x), weibull(; link=:softplus)),
+    ("cens_exponential_squareplus", @bf(ya | cens(cc, ya2) ~ x), exponential(; link=:squareplus)),
+    ("cens_gauss_log", @bf(yg | cens(cc, yg2) ~ x), gaussian(; link=:log)),
+    ("cens_lognormal_inverse", @bf(ya | cens(cc, ya2) ~ x), lognormal(; link=:inverse)),
+    ("trunc_weibull_softplus", @bf(ya | trunc(ub = 20) ~ x), weibull(; link=:softplus)),
+    # cens() / trunc() for every family brms allows them for (contcens.jl; counts by pmf sums)
+    ("cens_student", @bf(yg | cens(cc, yg2) ~ x + (1 | g)), student()),
+    ("cens_skew_normal", @bf(yg | cens(cc, yg2) ~ x), skew_normal()),
+    ("cens_shifted_lognormal", @bf(ya | cens(cc, ya2) ~ x), shifted_lognormal()),
+    ("cens_exgaussian", @bf(ya | cens(cc, ya2) ~ x), exgaussian()),
+    ("cens_inverse_gaussian", @bf(ya | cens(cc, ya2) ~ x), inverse_gaussian(; link=:log)),
+    ("cens_gamma", @bf(ya | cens(cc, ya2) ~ x + (1 | g)), gammafamily()),
+    ("cens_frechet", @bf(ya | cens(cc, ya2) ~ x), frechet()),
+    ("cens_asym_laplace", @bf(yg | cens(cc, yg2) ~ x), asym_laplace()),
+    ("cens_beta", @bf(yu | cens(ccb) ~ x), betafamily()),
+    ("trunc_student", @bf(yg | trunc(lb = -10, ub = 12) ~ x), student()),
+    ("trunc_gamma", @bf(ya | trunc(lb = 0.01) ~ x, shape ~ z), gammafamily()),
+    ("trunc_beta", @bf(yu | trunc(ub = 0.995) ~ x), betafamily()),
+    ("cens_zip", @bf(yp | cens(cc, yp2) ~ x), zero_inflated_poisson()),
+    ("cens_hurdle_nb", @bf(yp | cens(cc, yp2) ~ x), hurdle_negbinomial()),
+    ("trunc_zinb_ub", @bf(yp | trunc(ub = 30) ~ x), zero_inflated_negbinomial()),
+    ("cens_zib", @bf(yn | trials(n) + cens(ccb) ~ x), zero_inflated_binomial()),
+    ("cens_hurdle_gamma", @bf(yh | cens(cc, ya2) ~ x), hurdle_gamma()),
+    ("cens_zi_beta", @bf(yz0 | cens(ccb) ~ x), zero_inflated_beta()),
+    ("cens_von_mises", @bf(yang | cens(ccb) ~ x), von_mises()),
+    # cens() and trunc() together (CensTrunc)
+    ("cens_trunc_gauss", @bf(yg | cens(cc, yg2) + trunc(lb = -10) ~ x), gaussian()),
+    ("cens_trunc_gamma", @bf(ya | cens(cc, ya2) + trunc(ub = 50) ~ x), gammafamily()),
+    ("cens_trunc_pois", @bf(yp | cens(cc, yp2) + trunc(ub = 40) ~ x), poisson()),
+    ("zi_asym_laplace", @bf(yh ~ x, zi ~ z), zero_inflated_asym_laplace()),
+    ("dirichlet_multinomial", @bf(cbind(ca, cb, cc3) ~ x, phi ~ z), dirichlet_multinomial()),
+    ("dirichlet2", @bf(cbind(pa, pb, pc) ~ x + (1 | g)), dirichlet2()),
+    # mmc(): member-specific covariates in a multi-membership term
+    ("mmc", @bf(yg ~ x + (1 + mmc(x, z) | mm(g, g2))), gaussian()),
+    ("mmc_weights_uncor", @bf(yp ~ x + (mmc(x, z) || mm(g, g2, weights = cbind(w, expo)))), poisson()),
+    ("cens_zi_asym_laplace", @bf(yh | cens(cc, ya2) ~ x), zero_inflated_asym_laplace(; link=:softplus)),
+    # se() for student / skew_normal / non-identity gaussian (SEFamily)
+    ("se_student", @bf(yg | se(se) ~ x), student()),
+    ("se_student_sigma", @bf(yg | se(se, sigma = TRUE) ~ x + (1 | g)), student()),
+    ("se_skew_normal", @bf(yg | se(se) ~ x, alpha ~ z), skew_normal()),
+    ("se_gauss_log_sigma", @bf(ya | se(se, sigma = TRUE) ~ x), gaussian(; link=:log)),
 ]
 const NL_PRIORS = [prior("normal(1, 2)"; nlpar=:a), prior("normal(0, 2)"; nlpar=:b)]
 const NL_CASES = [
     ("nl_basic", @bf(ynl ~ a * exp(-b * abs(x)), a ~ 1, b ~ 1, nl = true), gaussian()),
+    # nlf(): a non-linear distributional parameter (on its link scale: log sigma)
+    ("nlf_sigma", @bf(ynl ~ x) + @nlf(sigma ~ a + b * abs(x), a ~ 1, b ~ 1), gaussian()),
+    ("nlf_lf", @bf(ynl ~ x + (1 | g)) + @nlf(sigma ~ a * log1p(z^2) + b) + @lf(a ~ 1, b ~ 1 + (1 | g)), gaussian()),
     ("nl_groups", @bf(ynl ~ a * exp(-b * abs(x)), a ~ 1 + (1 | g), b ~ 1 + z, nl = true), gaussian()),
     ("nl_distrib", @bf(ynl ~ a + b * x, a ~ 1, b ~ 1, sigma ~ z, nl = true), gaussian()),
     ("nl_string", bf("ynl ~ a * exp(-b * abs(x))", "a ~ 1", "b ~ 1"; nl=true), gaussian()),
+    ("nl_set_nl", bf("ynl ~ a * exp(-b * abs(x))", "a ~ 1", "b ~ 1 + z") + set_nl(), gaussian()),
 ]
 
 # bounded coefficients: lower, upper, both

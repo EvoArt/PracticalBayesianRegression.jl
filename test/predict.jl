@@ -16,6 +16,27 @@
     nd = (; x=TD.x[1:5], g=TD.g[1:5], yp=TD.yp[1:5])
     @test posterior_epred(fit; newdata=nd) ≈ E[:, 1:5]
     @test log_lik(fit; newdata=nd) ≈ LL[:, 1:5]
+    # brms accessors (brmsapi.jl)
+    V, vn = vcov(fit)
+    @test size(V) == (2, 2) && vn == ["Intercept", "x"] && issymmetric(V)
+    @test ngrps(fit) == Dict("g" => 6) && nobs(fit) == N
+    @test logLik(fit) == LL && nvariables(fit) == length(variables(fit))
+    dd = as_draws_df(fit)
+    @test length(dd.b_x) == S && dd[Symbol(".chain")][end] == 2 && first(as_draws_matrix(fit)) == first(PG.draws(fit))
+    @test length(make_conditions((; x=TD.x, h=TD.h), [:x, :h])) == 6
+    @test inv_logit_scaled(logit_scaled(0.7, 0, 2), 0, 2) ≈ 0.7 && expp1(logm1(3.5)) ≈ 3.5
+    @test size(loo_predictive_interval(fit)) == (N, 2)
+    @test mvbf(@bf(y1 ~ x), @bf(y2 ~ x); rescor=false) isa MVFormula
+    # loo_subsample: all observations in the subsample = exact PSIS-LOO; fewer: close, with a subsampling SE
+    lf = loo(fit)
+    ls = loo_subsample(fit; observations=N)
+    @test ls.elpd ≈ lf.elpd rtol = 1e-10
+    @test ls.subsampling_se ≈ 0 atol = 1e-8
+    ls2 = loo_subsample(fit; observations=100)
+    @test abs(ls2.elpd - lf.elpd) < 4 * ls2.subsampling_se + 1e-6 && ls2.subsampling_se > 0
+    @test loo_subsample(fit; observations=100, loo_approximation=:lpd).subsampling_se > 0
+    kp = kfold_predict(fit; K=2, chains=1, iter=200, warmup=100)
+    @test size(kp.yrep) == (100, N) && kp.y == Float64.(TD.yp)
     # ordinal: epred is category probabilities summing to one
     fo = brm(@bf(yo ~ x), TD; family=cumulative(), chains=1, iter=300, warmup=150, seed=2)
     P = posterior_epred(fo)
@@ -176,5 +197,15 @@
         @test size(log_posterior(fx)) == (200, 1)
         @test haskey(rhat(fx), "b_x") && 0 < neff_ratio(fx)["b_x"]
         @test niterations(fx) == 200 && nchains(fx) == 1 && ndraws(fx) == 200
+    end
+    @testset "se(): predictive draws add the known standard error (brms)" begin
+        fse = brm(@bf(yg | se(se) ~ x), TD; chains=1, iter=600, warmup=300, seed=2)
+        P = posterior_predict(fse; rng=Xoshiro(1)); E = posterior_epred(fse)
+        @test std(P[:, 1] .- E[:, 1]) ≈ TD.se[1] rtol = 0.2
+        Pn = posterior_predict(fse; newdata=(; x=[0.0], se=[3.0]), rng=Xoshiro(1))
+        @test std(Pn[:, 1]) > 2
+        fst = brm(@bf(yg | se(se, sigma = TRUE) ~ x), TD; family=student(), chains=1, iter=300, warmup=150, seed=2)
+        @test "sigma" in variables(fst) && all(isfinite, log_lik(fst))
+        @test size(posterior_predict(fst; newdata=(; x=[0.0], se=[0.5]))) == (150, 1)
     end
 end

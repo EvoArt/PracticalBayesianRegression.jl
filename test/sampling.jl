@@ -120,6 +120,27 @@
         D = PG.draws(fs, "lagsar"); B0 = PG.draws(fs, "b_Intercept"); B1 = PG.draws(fs, "b_x")
         @test posterior_epred(fs)[1, :] ≈ (I - D[1] .* WSAR) \ (B0[1] .+ B1[1] .* dc.x)
         @test all(isfinite, log_lik(fs))
+        # new data with sar(): the new rows' matrix in newdata2 (brms)
+        @test posterior_epred(fs; newdata=dc, newdata2=(; WS=WSAR)) ≈ posterior_epred(fs)
+        @test log_lik(fs; newdata=dc, newdata2=(; WS=WSAR)) ≈ log_lik(fs)
+        @test_throws ArgumentError posterior_epred(fs; newdata=dc)
+    end
+
+    @testset "new data: car() locations, latent autocorrelation" begin
+        fcar = brm(@bf(yp ~ x + car(WCAR, gr = mlev1, type = "icar")), TD; family=poisson(),
+                   chains=1, iter=200, warmup=100, seed=3)
+        nd = (; x=TD.x[1:6], mlev1=TD.mlev1[1:6])
+        @test posterior_epred(fcar; newdata=nd) ≈ posterior_epred(fcar)[:, 1:6]
+        @test_throws ArgumentError posterior_epred(fcar; newdata=(; x=[0.0], mlev1=[9]))
+        fl = brm(@bf(yp ~ x + ar(gr = g, cov = TRUE)), TD; family=poisson(), chains=1, iter=200, warmup=100, seed=4)
+        E = posterior_epred(fl; newdata=(; x=[0.0, 0.1, 0.2], g=["a", "a", "b"]))
+        @test size(E) == (100, 3) && all(isfinite, E)
+        fu = brm(@bf(yp ~ x + unstr(ut, ug)), TD; family=poisson(), chains=1, iter=200, warmup=100, seed=5)
+        @test "cortime__t1__t2" in variables(fu) && "sderr" in variables(fu)
+        @test all(r -> -1 <= r <= 1, draws(fu, "cortime__t1__t2"))
+        E = posterior_epred(fu; newdata=(; x=[0.0, 0.1], ut=["t1", "t3"], ug=["new", "new"]))
+        @test size(E) == (100, 2) && all(isfinite, E)
+        @test_throws ArgumentError posterior_epred(fu; newdata=(; x=[0.0], ut=["t9"], ug=["new"]))
     end
 
     @testset "gr(g, dist = \"student\")" begin

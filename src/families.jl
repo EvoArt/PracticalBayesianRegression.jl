@@ -76,6 +76,7 @@ struct ShiftedLognormal{L<:Link} <: DualFamily
 end
 ShiftedLognormal{L}() where {L} = ShiftedLognormal{L}(NaN)
 struct AsymLaplace{L<:Link} <: DualFamily end          # quantile regression
+struct ZeroInflatedAsymLaplace{L<:Link} <: DualFamily end
 struct VonMises{L<:Link} <: DualFamily end             # circular responses
 struct ZeroInflatedBeta{L<:Link} <: DualFamily end
 struct ZeroOneInflatedBeta{L<:Link} <: DualFamily end
@@ -83,6 +84,7 @@ struct DiscreteWeibull{L<:Link} <: DualFamily end
 struct NegBinomial2{L<:Link} <: DualFamily end         # negbinomial with sigma = 1 / shape
 struct ComPoisson{L<:Link} <: DualFamily end           # Conway-Maxwell-Poisson, nu = shape
 struct XBeta{L<:Link} <: DualFamily end                # beta with exact 0/1 (dualfamilies.jl)
+struct ZeroInflatedBetaBinomial{L<:Link} <: DualFamily end   # extrafamilies.jl
 struct DirichletFam{L<:Link,K} <: DualFamily           # see multicat.jl
     cats::Vector{String}
     Y::Matrix{Float64}
@@ -95,8 +97,18 @@ struct LogisticNormal{L<:Link,K} <: Family             # see multicat.jl
 end
 struct Cox{L<:Link} <: Family                          # see cox.jl
     codes::Vector{Float64}       # 0 event, 1 right-censored, -1 left-censored
+    lb::Vector{Float64}          # trunc(): per observation (empty: no truncation)
+    ub::Vector{Float64}
 end
 struct Multinomial{L<:Link,K} <: Family                # see multicat.jl
+    cats::Vector{String}
+    Y::Matrix{Float64}
+end
+struct DirichletMultinomial{L<:Link,K} <: DualFamily   # see multicat.jl
+    cats::Vector{String}
+    Y::Matrix{Float64}
+end
+struct Dirichlet2{L<:Link,K} <: DualFamily             # see multicat.jl
     cats::Vector{String}
     Y::Matrix{Float64}
 end
@@ -112,42 +124,45 @@ const _FAMILY_TABLE = [
     (BetaBinomial, "beta_binomial", :logit, (:logit, :probit, :cloglog, :probit_approx, :cauchit, :softit, :identity)),
     (Poisson, "poisson", :log, (:log, :identity, :sqrt, :softplus, :squareplus)),
     (NegBinomial, "negbinomial", :log, (:log, :identity, :sqrt, :softplus, :squareplus)),
-    (Geometric, "geometric", :log, (:log,)),
+    (Geometric, "geometric", :log, (:log, :identity, :sqrt, :softplus, :squareplus)),
     (GammaFamily, "gamma", :log, (:log, :identity, :inverse, :softplus, :squareplus)),
-    (Weibull, "weibull", :log, (:log,)),
-    (Exponential, "exponential", :log, (:log,)),
+    (Weibull, "weibull", :log, (:log, :identity, :inverse, :softplus, :squareplus)),
+    (Exponential, "exponential", :log, (:log, :identity, :inverse, :softplus, :squareplus)),
     (BetaFamily, "beta", :logit, (:logit, :probit, :cloglog, :probit_approx, :cauchit, :softit, :identity, :log)),
-    (ZeroInflatedPoisson, "zero_inflated_poisson", :log, (:log,)),
-    (ZeroInflatedNegBinomial, "zero_inflated_negbinomial", :log, (:log,)),
-    (ZeroInflatedBinomial, "zero_inflated_binomial", :logit, (:logit,)),
-    (HurdlePoisson, "hurdle_poisson", :log, (:log,)),
-    (HurdleNegBinomial, "hurdle_negbinomial", :log, (:log,)),
-    (HurdleGamma, "hurdle_gamma", :log, (:log,)),
-    (HurdleLognormal, "hurdle_lognormal", :identity, (:identity,)),
+    (ZeroInflatedPoisson, "zero_inflated_poisson", :log, (:log, :identity, :sqrt, :softplus, :squareplus)),
+    (ZeroInflatedNegBinomial, "zero_inflated_negbinomial", :log, (:log, :identity, :sqrt, :softplus, :squareplus)),
+    (ZeroInflatedBinomial, "zero_inflated_binomial", :logit, (:logit, :probit, :cloglog, :probit_approx, :cauchit, :softit, :identity, :log)),
+    (HurdlePoisson, "hurdle_poisson", :log, (:log, :identity, :sqrt, :softplus, :squareplus)),
+    (HurdleNegBinomial, "hurdle_negbinomial", :log, (:log, :identity, :sqrt, :softplus, :squareplus)),
+    (HurdleGamma, "hurdle_gamma", :log, (:log, :identity, :inverse, :softplus, :squareplus)),
+    (HurdleLognormal, "hurdle_lognormal", :identity, (:identity, :inverse)),
     (Cumulative, "cumulative", :logit, (:logit, :probit, :probit_approx, :cloglog, :cauchit, :softit)),
     (Sratio, "sratio", :logit, (:logit, :probit, :probit_approx, :cloglog, :cauchit)),
     (Cratio, "cratio", :logit, (:logit, :probit, :probit_approx, :cloglog, :cauchit)),
     (Acat, "acat", :logit, (:logit, :probit, :probit_approx, :cloglog, :cauchit, :softit)),
     (Categorical, "categorical", :logit, (:logit,)),
-    (SkewNormal, "skew_normal", :identity, (:identity,)),
-    (ExGaussian, "exgaussian", :identity, (:identity,)),
+    (SkewNormal, "skew_normal", :identity, (:identity, :log, :inverse, :softplus, :squareplus, :logit, :probit, :probit_approx, :cloglog, :cauchit, :softit)),
+    (ExGaussian, "exgaussian", :identity, (:identity, :log, :inverse, :softplus, :squareplus)),
     (InverseGaussian, "inverse.gaussian", :inverse_squared, (:inverse_squared, :inverse, :identity, :log, :softplus, :squareplus)),
-    (Frechet, "frechet", :log, (:log,)),
-    (ShiftedLognormal, "shifted_lognormal", :identity, (:identity,)),
+    (Frechet, "frechet", :log, (:log, :identity, :inverse, :softplus, :squareplus)),
+    (ShiftedLognormal, "shifted_lognormal", :identity, (:identity, :inverse)),
     (AsymLaplace, "asym_laplace", :identity, (:identity, :log, :inverse, :softplus, :squareplus)),
+    (ZeroInflatedAsymLaplace, "zero_inflated_asym_laplace", :identity, (:identity, :log, :inverse, :softplus, :squareplus)),
     (VonMises, "von_mises", :tan_half, (:tan_half, :identity)),
     (ZeroInflatedBeta, "zero_inflated_beta", :logit, (:logit, :probit, :cloglog, :probit_approx, :cauchit, :softit, :identity, :log)),
     (ZeroOneInflatedBeta, "zero_one_inflated_beta", :logit, (:logit, :probit, :cloglog, :probit_approx, :cauchit, :softit, :identity, :log)),
-    (DiscreteWeibull, "discrete_weibull", :logit, (:logit,)),
+    (DiscreteWeibull, "discrete_weibull", :logit, (:logit, :probit, :probit_approx, :cloglog, :cauchit, :softit, :identity)),
     (NegBinomial2, "negbinomial2", :log, (:log, :identity, :sqrt, :softplus, :squareplus)),
-    (ComPoisson, "com_poisson", :log, (:log,)),
+    (ComPoisson, "com_poisson", :log, (:log, :identity, :sqrt, :softplus, :squareplus)),
     (HurdleCumulative, "hurdle_cumulative", :logit, (:logit, :probit, :probit_approx, :cloglog, :cauchit, :softit)),
     (Multinomial, "multinomial", :logit, (:logit,)),
-    (Cox, "cox", :log, (:log,)),
+    (Cox, "cox", :log, (:log, :identity, :softplus, :squareplus)),
     (LogisticNormal, "logistic_normal", :identity, (:identity,)),
-    (GenExtremeValue, "gen_extreme_value", :identity, (:identity,)),
+    (GenExtremeValue, "gen_extreme_value", :identity, (:identity, :log, :inverse, :softplus, :squareplus)),
     (XBeta, "xbeta", :logit, (:logit, :probit, :cloglog, :probit_approx, :cauchit, :softit, :identity, :log)),
     (DirichletFam, "dirichlet", :logit, (:logit,)),
+    (DirichletMultinomial, "dirichlet_multinomial", :logit, (:logit,)),
+    (Dirichlet2, "dirichlet2", :log, (:log,)),
 ]
 
 # `link(fam)`: the link instance, by dispatch (no reflection on the hot path)
@@ -516,6 +531,17 @@ Links for `mu`: $(_links_doc(AsymLaplace)).
 asym_laplace(; link=nothing) = _make_family(AsymLaplace, link)
 
 """
+    zero_inflated_asym_laplace(; link = :identity)
+
+Asymmetric Laplace (quantile regression) with extra exact zeros, brms's
+`zero_inflated_asym_laplace()`. Parameters: `mu`, `sigma`, `quantile` (as in
+[`asym_laplace`](@ref)) and `zi`, the probability of an extra zero.
+
+Links for `mu`: $(_links_doc(ZeroInflatedAsymLaplace)).
+"""
+zero_inflated_asym_laplace(; link=nothing) = _make_family(ZeroInflatedAsymLaplace, link)
+
+"""
     von_mises(; link = :tan_half)
 
 Von Mises distribution for angles in [-π, π]. Parameters: `mu` (the mean
@@ -602,6 +628,9 @@ function brmsfamily(name; link=nothing)
         link === nothing || throw(ArgumentError("give links per component: mixture(gaussian(link = ...), ...)"))
         return mixture((brmsfamily(strip(c)) for c in split(n[9:(end - 1)], ","))...)
     end
+    # families with their own constructors (defined in later files)
+    n == "wiener" && return wiener(; link=link)
+    n == "zero_inflated_beta_binomial" && return zero_inflated_beta_binomial(; link=link)
     k = findfirst(r -> r[2] == n, _FAMILY_TABLE)
     k === nothing && throw(ArgumentError("family `$name` is not supported yet"))
     return _make_family(_FAMILY_TABLE[k][1], link)
@@ -1046,6 +1075,108 @@ end
 _ll_const(::HurdleLognormal, y, t) = y > 0 ? -log(y) - _LOG_2PI_HALF : 0.0
 
 # =============================================================================
+# Non-default links (brms 2.23's link lists): the mean-scale route. Each
+# `_llmu` is the family's log density and its derivatives at the MEAN mu; the
+# generic `_ll` / `_ll_grad_pre` above chain d/d mu through mu_eta. The
+# hand-coded default-link methods are more specific, so they keep the fast
+# path. A mean outside the support (identity link) is -Inf, a rejected
+# proposal, as Stan's argument checks.
+# =============================================================================
+
+@inline function _llmu(::Geometric, y, x, mu, p)
+    mu > 0 || return oftype(mu, -Inf), (zero(mu),)
+    return y * log(mu) - (y + 1) * log1p(mu), (y / mu - (y + 1) / (1 + mu),)
+end
+
+# weibull / exponential in terms of log mu; d/d mu = d/d log mu / mu
+@inline function _llmu(fam::Weibull, y, ly, mu, p)
+    mu > 0 || return oftype(mu, -Inf), (zero(mu), zero(mu))
+    v, (gl, gk) = _ll_grad_pre(Weibull{LogLink}(), y, ly, log(mu), p)
+    return v, (gl / mu, gk)
+end
+@inline function _llmu(::Exponential, y, x, mu, p)
+    mu > 0 || return oftype(mu, -Inf), (zero(mu),)
+    q = y / mu
+    return -log(mu) - q, ((q - 1) / mu,)
+end
+
+# zero-inflated: see the identities above the zero-inflated section
+@inline function _llmu(::ZeroInflatedPoisson, y, x, mu, p)
+    lpi, l1pi, pi = p
+    mu > 0 || return oftype(mu, -Inf), (zero(mu), zero(mu))
+    if y == 0
+        v = logaddexp(lpi, l1pi - mu)
+        wA = exp(lpi - v); wB = 1 - wA
+        return v, (-wB, wA * (1 - pi) - wB * pi)
+    end
+    return l1pi + y * log(mu) - mu, (y / mu - 1, -pi)
+end
+@inline function _llmu(::ZeroInflatedBinomial, y, t, mu, p)
+    lpi, l1pi, pi = p
+    0 < mu < 1 || return oftype(mu, -Inf), (zero(mu), zero(mu))
+    l1m = log1p(-mu)
+    if y == 0
+        v = logaddexp(lpi, l1pi + t * l1m)
+        wA = exp(lpi - v); wB = 1 - wA
+        return v, (-t / (1 - mu) * wB, wA * (1 - pi) - wB * pi)
+    end
+    return l1pi + y * log(mu) + (t - y) * l1m, (y / mu - (t - y) / (1 - mu), -pi)
+end
+# NB at mean mu: log P(0) = phi (log phi - log(mu + phi)) and its derivatives
+# (d/d mu, d/d log phi)
+@inline function _nb_log0_mu(mu, p)
+    phi, lp = p.phi, p.lp
+    lmp = log(mu + phi)
+    return phi * (lp - lmp), -phi / (mu + phi), phi * (lp - lmp + 1 - phi / (mu + phi))
+end
+@inline function _llmu(::ZeroInflatedNegBinomial, y, x, mu, p)
+    lpi, l1pi, pi = p.z
+    mu > 0 || return oftype(mu, -Inf), (zero(mu), zero(mu), zero(mu))
+    if y == 0
+        l0, d0m, d0p = _nb_log0_mu(mu, p)
+        v = logaddexp(lpi, l1pi + l0)
+        wA = exp(lpi - v); wB = 1 - wA
+        return v, (wB * d0m, wB * d0p, wA * (1 - pi) - wB * pi)
+    end
+    v, (gm, gp) = _llmu(NegBinomial{LogLink}(), y, x, mu, p)
+    return l1pi + v, (gm, gp, -pi)
+end
+
+# hurdle: y = 0 is log hu whatever mu (as brms's lpmf, which does not
+# evaluate the count part there)
+@inline function _llmu(::HurdlePoisson, y, x, mu, p)
+    lpi, l1pi, pi = p
+    y == 0 && return lpi, (zero(mu), 1 - pi)
+    mu > 0 || return oftype(mu, -Inf), (zero(mu), zero(mu))
+    # log(1 - P(0)) = log(1 - exp(-mu)); d/d mu = 1 / expm1(mu)
+    return l1pi + y * log(mu) - mu - log1mexp(-mu), (y / mu - 1 - 1 / expm1(mu), -pi)
+end
+@inline function _llmu(::HurdleNegBinomial, y, x, mu, p)
+    lpi, l1pi, pi = p.z
+    y == 0 && return lpi, (zero(mu), zero(mu), 1 - pi)
+    mu > 0 || return oftype(mu, -Inf), (zero(mu), zero(mu), zero(mu))
+    v, (gm, gp) = _llmu(NegBinomial{LogLink}(), y, x, mu, p)
+    l0, d0m, d0p = _nb_log0_mu(mu, p)
+    r = 1 / expm1(-l0)                  # P0 / (1 - P0)
+    return l1pi + v - log1mexp(l0), (gm + r * d0m, gp + r * d0p, -pi)
+end
+@inline function _llmu(::HurdleGamma, y, ly, mu, p)
+    lpi, l1pi, pi = p.z
+    y == 0 && return lpi, (zero(mu), zero(mu), 1 - pi)
+    mu > 0 || return oftype(mu, -Inf), (zero(mu), zero(mu), zero(mu))
+    v, (gm, ga) = _llmu(GammaFamily{LogLink}(), y, ly, mu, p)
+    return l1pi + v, (gm, ga, -pi)
+end
+# hurdle_lognormal: mu is the location of log y (identity or inverse link)
+@inline function _llmu(::HurdleLognormal, y, ly, mu, p)
+    lpi, l1pi, pi = p.z
+    y == 0 && return lpi, (zero(mu), zero(mu), 1 - pi)
+    r = (ly - mu) * p.is
+    r2 = r * r
+    return l1pi - r2 / 2 - p.ls, (r * p.is, r2 - 1, -pi)
+end
+
+# =============================================================================
 # Response checks
 # =============================================================================
 _check_response(::Family, y, t) = nothing
@@ -1067,23 +1198,23 @@ const D_ = Distributions
 
 _mean(fam::Family, eta, t) = linkinv(link(fam), eta[1])
 _mean(fam::Union{Binomial,BetaBinomial}, eta, t) = t * linkinv(link(fam), eta[1])
-_mean(::Lognormal, eta, t) = exp(eta[1] + exp(2eta[2]) / 2)
-_mean(::ZeroInflatedPoisson, eta, t) = (1 - logistic(eta[2])) * exp(eta[1])
-_mean(::ZeroInflatedNegBinomial, eta, t) = (1 - logistic(eta[3])) * exp(eta[1])
-_mean(::ZeroInflatedBinomial, eta, t) = (1 - logistic(eta[2])) * t * logistic(eta[1])
-_mean(::HurdlePoisson, eta, t) = (1 - logistic(eta[2])) * exp(eta[1]) / (-expm1(-exp(eta[1])))
-function _mean(::HurdleNegBinomial, eta, t)
-    mu, phi = exp(eta[1]), exp(eta[2])
+_mu(fam, eta) = linkinv(link(fam), eta[1])
+_mean(f::Lognormal, eta, t) = exp(_mu(f, eta) + exp(2eta[2]) / 2)
+_mean(f::ZeroInflatedPoisson, eta, t) = (1 - logistic(eta[2])) * _mu(f, eta)
+_mean(f::ZeroInflatedNegBinomial, eta, t) = (1 - logistic(eta[3])) * _mu(f, eta)
+_mean(f::ZeroInflatedBinomial, eta, t) = (1 - logistic(eta[2])) * t * _mu(f, eta)
+_mean(f::HurdlePoisson, eta, t) = (m = _mu(f, eta); (1 - logistic(eta[2])) * m / (-expm1(-m)))
+function _mean(f::HurdleNegBinomial, eta, t)
+    mu, phi = _mu(f, eta), exp(eta[2])
     p0 = (phi / (mu + phi))^phi
     return (1 - logistic(eta[3])) * mu / (1 - p0)
 end
-_mean(::HurdleGamma, eta, t) = (1 - logistic(eta[3])) * exp(eta[1])
-_mean(::HurdleLognormal, eta, t) = (1 - logistic(eta[3])) * exp(eta[1] + exp(2eta[2]) / 2)
+_mean(f::HurdleGamma, eta, t) = (1 - logistic(eta[3])) * _mu(f, eta)
+_mean(f::HurdleLognormal, eta, t) = (1 - logistic(eta[3])) * exp(_mu(f, eta) + exp(2eta[2]) / 2)
 
-_mu(fam, eta) = linkinv(link(fam), eta[1])
 _rand(rng, fam::Gaussian, eta, t) = _mu(fam, eta) + exp(eta[2]) * randn(rng)
 _rand(rng, fam::Student, eta, t) = _mu(fam, eta) + exp(eta[2]) * rand(rng, D_.TDist(1 + exp(eta[3])))
-_rand(rng, ::Lognormal, eta, t) = exp(eta[1] + exp(eta[2]) * randn(rng))
+_rand(rng, f::Lognormal, eta, t) = exp(_mu(f, eta) + exp(eta[2]) * randn(rng))
 _rand(rng, fam::Bernoulli, eta, t) = Float64(rand(rng) < _mu(fam, eta))
 _rand(rng, fam::Binomial, eta, t) = Float64(rand(rng, D_.Binomial(t, _mu(fam, eta))))
 function _rand(rng, fam::BetaBinomial, eta, t)
@@ -1100,46 +1231,46 @@ function _rand(rng, fam::GammaFamily, eta, t)
     mu, a = _mu(fam, eta), exp(eta[2])
     return rand(rng, D_.Gamma(a, mu / a))
 end
-function _rand(rng, ::Weibull, eta, t)
+function _rand(rng, f::Weibull, eta, t)
     k = exp(eta[2])
-    return rand(rng, D_.Weibull(k, exp(eta[1] - loggamma(1 + 1 / k))))
+    return rand(rng, D_.Weibull(k, _mu(f, eta) / exp(loggamma(1 + 1 / k))))
 end
-_rand(rng, ::Exponential, eta, t) = rand(rng, D_.Exponential(exp(eta[1])))
+_rand(rng, f::Exponential, eta, t) = rand(rng, D_.Exponential(_mu(f, eta)))
 function _rand(rng, fam::BetaFamily, eta, t)
     mu, phi = _mu(fam, eta), exp(eta[2])
     return rand(rng, D_.Beta(mu * phi, (1 - mu) * phi))
 end
-_rand(rng, ::ZeroInflatedPoisson, eta, t) =
-    rand(rng) < logistic(eta[2]) ? 0.0 : Float64(rand(rng, D_.Poisson(exp(eta[1]))))
-_rand(rng, ::ZeroInflatedBinomial, eta, t) =
-    rand(rng) < logistic(eta[2]) ? 0.0 : Float64(rand(rng, D_.Binomial(t, logistic(eta[1]))))
-function _rand(rng, ::ZeroInflatedNegBinomial, eta, t)
+_rand(rng, f::ZeroInflatedPoisson, eta, t) =
+    rand(rng) < logistic(eta[2]) ? 0.0 : Float64(rand(rng, D_.Poisson(_mu(f, eta))))
+_rand(rng, f::ZeroInflatedBinomial, eta, t) =
+    rand(rng) < logistic(eta[2]) ? 0.0 : Float64(rand(rng, D_.Binomial(t, _mu(f, eta))))
+function _rand(rng, f::ZeroInflatedNegBinomial, eta, t)
     rand(rng) < logistic(eta[3]) && return 0.0
-    mu, phi = exp(eta[1]), exp(eta[2])
+    mu, phi = _mu(f, eta), exp(eta[2])
     return Float64(rand(rng, D_.NegativeBinomial(phi, phi / (mu + phi))))
 end
 # hurdle: zero with probability hu, else a draw from the base truncated at 0
-function _rand(rng, ::HurdlePoisson, eta, t)
+function _rand(rng, f::HurdlePoisson, eta, t)
     rand(rng) < logistic(eta[2]) && return 0.0
-    d = D_.Poisson(exp(eta[1]))
+    d = D_.Poisson(_mu(f, eta))
     while true
         v = rand(rng, d)
         v > 0 && return Float64(v)
     end
 end
-function _rand(rng, ::HurdleNegBinomial, eta, t)
+function _rand(rng, f::HurdleNegBinomial, eta, t)
     rand(rng) < logistic(eta[3]) && return 0.0
-    mu, phi = exp(eta[1]), exp(eta[2])
+    mu, phi = _mu(f, eta), exp(eta[2])
     d = D_.NegativeBinomial(phi, phi / (mu + phi))
     while true
         v = rand(rng, d)
         v > 0 && return Float64(v)
     end
 end
-function _rand(rng, ::HurdleGamma, eta, t)
+function _rand(rng, f::HurdleGamma, eta, t)
     rand(rng) < logistic(eta[3]) && return 0.0
-    mu, a = exp(eta[1]), exp(eta[2])
+    mu, a = _mu(f, eta), exp(eta[2])
     return rand(rng, D_.Gamma(a, mu / a))
 end
-_rand(rng, ::HurdleLognormal, eta, t) =
-    rand(rng) < logistic(eta[3]) ? 0.0 : exp(eta[1] + exp(eta[2]) * randn(rng))
+_rand(rng, f::HurdleLognormal, eta, t) =
+    rand(rng) < logistic(eta[3]) ? 0.0 : exp(_mu(f, eta) + exp(eta[2]) * randn(rng))

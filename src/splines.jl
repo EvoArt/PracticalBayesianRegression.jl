@@ -464,4 +464,77 @@ function res(cols, levels; label="s")
     return RESmooth(label, levels, opnorm(X, Inf))
 end
 smooth_basis(t::RESmooth, cols) = (zeros(length(cols[1]), 0), [_re_X(t.levels, cols) ./ t.scale])
-_smooth_cols(t, cols) = t isa RESmooth ? cols : reduce(hcat, [Float64.(c) for c in cols])
+_smooth_cols(t, cols) = t isa Union{RESmooth,FSSmooth,MRFSmooth} ? cols : reduce(hcat, [Float64.(c) for c in cols])
+
+# s(x, g, bs = "fs"): mgcv's factor-smooth interaction, as brms builds it. The
+# base smooth of the numeric covariates (tp, or cr with xt = "cr"), uncentred,
+# is reparameterised by mgcv's nat.param(type = 1): X = QR, R^-T S R^-1 = U D U',
+# basis X R^-1 U with the penalised columns divided by sqrt(D), each group of
+# columns (penalised / null space) scaled to unit mean square. That basis is
+# replicated per level of the factor (zero elsewhere). One penalty for all the
+# penalised columns, one per null-space column, all identities after smoothCon's
+# scaling, so smooth2random gives 1 + null-dim random blocks, each the columns
+# divided by the fs design's infinity norm; nothing is unpenalised. As with cs,
+# mgcv's null-space basis is whatever LAPACK returns for an exactly-zero
+# eigenvalue pair (an arbitrary rotation of e.g. {1, x}); here it is ours.
+struct FSSmooth{B<:AbstractSmooth} <: AbstractSmooth
+    label::String
+    base::B                       # uncentred tp / cr smooth of the numeric covariates
+    P::Matrix{Float64}            # raw base basis -> nat.param basis
+    rank::Int
+    fpos::Int                     # which covariate is the factor
+    levels::Vector{String}
+    scale::Float64                # ||X_fs||_inf of the training design
+end
+_fs_raw(b::TPRS, X) = _tprs_raw(b, X)
+_fs_raw(b::CRSmooth, X) = _cr_basis(b.knots, b.F, Float64.(X[:, 1]))
+_fs_rawS(b::Union{TPRS,CRSmooth}) = b.S          # uncentred: Qc = I
+function _fs_split(cols, fpos)
+    num = [Float64.(c) for (k, c) in enumerate(cols) if k != fpos]
+    return reduce(hcat, num), [_level_name(v) for v in cols[fpos]]
+end
+function fss(cols, fpos, levels; k=nothing, base=:tp, label="s")
+    Xn, _ = _fs_split(cols, fpos)
+    b = base === :cr ? crs(Xn; k, label, center=false) : tprs(Xn; k, label, center=false)
+    X = _fs_raw(b, Xn)
+    S = _fs_rawS(b)
+    # nat.param(X, S, type = 1, unit.fnorm = TRUE)
+    F = qr(X)
+    R = Matrix(F.R); Q = Matrix(F.Q)
+    RSR = R' \ (R' \ S')'                         # R^-T S R^-1
+    es = eigen(Symmetric((RSR + RSR') / 2); sortby=v -> -v)
+    tol = maximum(es.values) * eps()^0.8
+    rank = count(>(tol), es.values)
+    U = es.vectors
+    Xr = Q * U
+    P = R \ U
+    E = vcat(sqrt.(es.values[1:rank]), ones(size(X, 2) - rank))
+    Xr ./= E'; P ./= E'
+    sc = 1 / sqrt(mean(abs2, Xr[:, 1:rank]))
+    Xr[:, 1:rank] .*= sc; P[:, 1:rank] .*= sc
+    if rank < size(X, 2)
+        ind = (rank + 1):size(X, 2)
+        scf = 1 / sqrt(mean(abs2, Xr[:, ind]))
+        Xr[:, ind] .*= scf; P[:, ind] .*= scf
+    end
+    # each row has one level's block: the fs design's infinity norm is the largest row sum
+    scale = maximum(sum(abs, Xr; dims=2))
+    return FSSmooth(label, b, P, rank, fpos, levels, scale)
+end
+function smooth_basis(t::FSSmooth, cols)
+    Xn, gv = _fs_split(cols, t.fpos)
+    Xr = _fs_raw(t.base, Xn) * t.P ./ t.scale
+    N, kb = size(Xr); nf = length(t.levels)
+    pos = Dict(l => j for (j, l) in enumerate(t.levels))
+    Zpen = zeros(N, t.rank * nf)
+    Znul = [zeros(N, nf) for _ in 1:(kb - t.rank)]
+    for i in 1:N
+        j = get(pos, gv[i], 0)
+        j == 0 && continue                          # a level not in training: no effect
+        Zpen[i, ((j - 1) * t.rank + 1):(j * t.rank)] .= view(Xr, i, 1:t.rank)
+        for (m, Zm) in enumerate(Znul)
+            Zm[i, j] = Xr[i, t.rank + m]
+        end
+    end
+    return zeros(N, 0), vcat([Zpen], Znul)
+end

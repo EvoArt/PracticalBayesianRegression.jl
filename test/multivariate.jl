@@ -62,6 +62,29 @@
     mvs, _ = build_mv_model(@bf(ymi ~ mi(xm) + z) + @bf(xm | mi() ~ z) + set_rescor(false), dmi; mi=:sample)
     @test isempty(mvs.marg) && mvs.dim == mvm.dim + 5           # five Ymi parameters when sampled
     check(mvs)
+    # mi(x, idx) + index(): x observed on a subset of rows; each y row uses the x row whose
+    # index equals its idx (brms's nhanes example)
+    N2 = 60; zz = randn(Xoshiro(5), N2)
+    xx = Vector{Union{Missing,Float64}}(zz .+ 0.3 .* randn(Xoshiro(6), N2)); xx[[4, 11]] .= missing
+    subx = [i > 2 for i in 1:N2]; id = collect(1:N2); idx = rand(Xoshiro(7), 3:N2, N2)
+    yy = 0.5 .+ 0.8 .* coalesce.(xx, 0.0)[idx] .+ 0.3 .* randn(Xoshiro(8), N2)
+    dix = (; yy, xx, zz, subx, id, idx)
+    mvi, _ = build_mv_model(@bf(yy ~ mi(xx, idx)) + @bf(xx | mi() + subset(subx) + index(id) ~ zz) + set_rescor(false), dix)
+    check(mvi)
+    m1 = only(mvi.subs[1].preds[1].mi)
+    @test m1.Jmi == findall(in((4, 11)), idx) && all(isnan, m1.x[m1.Jmi])
+    @test all(m1.x[n] == xx[idx[n]] for n in eachindex(idx) if !(idx[n] in (4, 11)))
+    @test_throws ArgumentError build_mv_model(@bf(yy ~ mi(xx, idx)) + @bf(xx | mi() + subset(subx) ~ zz) + set_rescor(false), dix)
+    # sampled imputation of a bounded family: brms's Ymi <lower = 0> (gamma), (0, 1) (beta)
+    xg = Vector{Union{Missing,Float64}}(exp.(0.3 .* x)); xg[[3, 17, 40]] .= missing
+    xu = Vector{Union{Missing,Float64}}(1 ./ (1 .+ exp.(-x))); xu[[5, 9]] .= missing
+    dgm = (; ymi, xg, xu, z)
+    mvg, _ = build_mv_model(@bf(ymi ~ mi(xg) + mi(xu) + z) + @bf(xg | mi() ~ z) + @bf(xu | mi() ~ z) + set_rescor(false),
+                            dgm; family=[gaussian(), gammafamily(), betafamily()])
+    check(mvg)
+    @test "Ymi_xg[3]" in variables(mvg) && "Ymi_xu[2]" in variables(mvg)
+    cg = constrain(mvg, 3 .* randn(Xoshiro(2), mvg.dim)); vg = variables(mvg)
+    @test all(>(0), cg[startswith.(vg, "Ymi_xg")]) && all(v -> 0 < v < 1, cg[startswith.(vg, "Ymi_xu")])
     fms = brm(@bf(ymi ~ mi(xm) + z) + @bf(xm | mi() ~ z) + set_rescor(false), dmi; chains=2, iter=800, warmup=400,
               seed=6, mi=:sample)
     for n in ("bsp_ymi_mixm", "b_ymi_z", "sigma_ymi", "b_xm_z", "sigma_xm")
@@ -91,6 +114,22 @@
     @test "Ymi[2]" in variables(fu)
     yd = vec(draws(fu, "Ymi[1]"))                      # posterior predictive draws at row 5
     @test abs(mean(yd) - mean(posterior_epred(fu)[:, 5])) < 4 * std(yd) / sqrt(length(yd))
+    # any family when integrated out (brms allows mi() for every continuous family)
+    yg = Vector{Union{Missing,Float64}}(exp.(0.3 .* z .+ 0.2 .* ymi ./ std(ymi))); yg[[4, 7]] .= missing
+    ldg, _ = build_model(@bf(yg | mi() ~ z), (; yg, z); family=gammafamily())
+    @test !PG._mi_sampled(ldg) && iszero(ldg.weights[[4, 7]])
+    θg = 0.3 .* randn(ldg.dim)
+    @test isfinite(LDP.logdensity(ldg, θg))
+    fg = brm(@bf(yg | mi() ~ z), (; yg, z); family=gammafamily(), chains=1, iter=300, warmup=150, seed=3)
+    @test all(>(0), draws(fg, "Ymi[1]"))
+    # sampled (brms's Ymi <lower = 0>): exp transform + Jacobian, d ll / d y by a dual pass
+    lgs, _ = build_model(@bf(yg | mi() ~ z), (; yg, z); family=gammafamily(), mi_mode=:sample)
+    @test PG._mi_sampled(lgs)
+    θs = 0.3 .* randn(Xoshiro(4), lgs.dim); gs = zeros(lgs.dim)
+    @test logdensity_and_gradient!(gs, fresh_workspace(lgs), θs) ≈ LDP.logdensity(lgs, θs)
+    @test gs ≈ ForwardDiff.gradient(t -> LDP.logdensity(lgs, t), θs) rtol = 1e-8 atol = 1e-8
+    @test_throws ArgumentError build_model(@bf(yp | mi() ~ z), (; yp=Vector{Union{Missing,Float64}}([missing; 1.0 .* (1:N-1)]), z);
+                                           family=poisson(), mi_mode=:sample)
 
     # a group-term ID spanning responses: one correlated block across y1 and y2
     mvx, _ = build_mv_model(@bf(y1 ~ x + (1 | p | g)) + @bf(y2 ~ z + (1 + z | p | g)) + set_rescor(false), d)

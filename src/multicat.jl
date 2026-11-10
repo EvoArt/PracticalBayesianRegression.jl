@@ -17,7 +17,15 @@
 
 Multinomial{L}() where {L} = Multinomial{L,0}(String[], zeros(0, 0))
 DirichletFam{L}() where {L} = DirichletFam{L,0}(String[], zeros(0, 0))
-const _MultiCat = Union{Multinomial,DirichletFam,LogisticNormal}
+DirichletMultinomial{L}() where {L} = DirichletMultinomial{L,0}(String[], zeros(0, 0))
+Dirichlet2{L}() where {L} = Dirichlet2{L,0}(String[], zeros(0, 0))
+const _MultiCat = Union{Multinomial,DirichletFam,LogisticNormal,DirichletMultinomial,Dirichlet2}
+# counts with trials (the row sums) as the response total
+const _CountCat = Union{Multinomial,DirichletMultinomial}
+_with_matrix(::DirichletMultinomial{L}, cats, Y) where {L} = DirichletMultinomial{L,length(cats)}(cats, Y)
+_with_matrix(::Dirichlet2{L}, cats, Y) where {L} = Dirichlet2{L,length(cats)}(cats, Y)
+_ncat(::DirichletMultinomial{L,K}) where {L,K} = K
+_ncat(::Dirichlet2{L,K}) where {L,K} = K
 _with_matrix(::Multinomial{L}, cats, Y) where {L} = Multinomial{L,length(cats)}(cats, Y)
 _with_matrix(::DirichletFam{L}, cats, Y) where {L} = DirichletFam{L,length(cats)}(cats, Y)
 # one method per family, no `_ncat(::_MultiCat)` fallback: Julia 1.12 picked such a
@@ -27,12 +35,16 @@ _ncat(::DirichletFam{L,K}) where {L,K} = K
 
 dpars(f::Multinomial) = Tuple(Symbol("mu", c) for c in f.cats[2:end])
 dpars(f::DirichletFam) = (Tuple(Symbol("mu", c) for c in f.cats[2:end])..., :phi)
+dpars(f::DirichletMultinomial) = (Tuple(Symbol("mu", c) for c in f.cats[2:end])..., :phi)
+dpars(f::Dirichlet2) = Tuple(Symbol("mu", c) for c in f.cats)        # no reference category
 dpar_link_name(::_MultiCat, d::Symbol) = d === :phi ? "log" : "logit"
+dpar_link_name(::Dirichlet2, d::Symbol) = "log"
 _is_cat_mu(f::_MultiCat, d::Symbol) = d !== :phi
 
 # per-observation data: the counts (multinomial) or log proportions (dirichlet)
 _xdata(f::Multinomial{L,K}, y, trials) where {L,K} = [ntuple(k -> f.Y[i, k], Val(K)) for i in axes(f.Y, 1)]
-_xdata(f::DirichletFam{L,K}, y, trials) where {L,K} = [ntuple(k -> log(f.Y[i, k]), Val(K)) for i in axes(f.Y, 1)]
+_xdata(f::Union{DirichletFam{L,K},Dirichlet2{L,K}}, y, trials) where {L,K} = [ntuple(k -> log(f.Y[i, k]), Val(K)) for i in axes(f.Y, 1)]
+_xdata(f::DirichletMultinomial{L,K}, y, trials) where {L,K} = [ntuple(k -> f.Y[i, k], Val(K)) for i in axes(f.Y, 1)]
 
 @inline function _ll(::Multinomial, y, x, eta)
     lse, _ = _cat_lse(eta)
@@ -65,10 +77,40 @@ _ll_const_obs(::Multinomial, y, t, x) = loggamma(sum(x) + 1) - sum(v -> loggamma
 end
 _ll_const(::DirichletFam, y, t) = 0.0
 
+# dirichlet_multinomial (brms 2.23): alpha = phi * softmax(0, mu_2..mu_K),
+#   log P = lgamma(phi) - lgamma(n + phi) + sum_k [lgamma(y_k + alpha_k) - lgamma(alpha_k)]
+#           + lgamma(n + 1) - sum_k lgamma(y_k + 1)      (the last line: data constant)
+@inline function _ll(f::DirichletMultinomial{L,K}, y, x, eta) where {L,K}
+    mus = ntuple(j -> eta[j], Val(K - 1))
+    _, p = _cat_lse(mus)
+    phi = exp(eta[K])
+    n = sum(x)
+    a1 = phi * (1 - sum(p))
+    v = loggamma(phi) - loggamma(n + phi) + loggamma(x[1] + a1) - loggamma(a1)
+    for k in 1:(K - 1)
+        a = phi * p[k]
+        v += loggamma(x[k + 1] + a) - loggamma(a)
+    end
+    return v
+end
+_ll_const(::DirichletMultinomial, y, t) = 0.0
+_ll_const_obs(::DirichletMultinomial, y, t, x) = loggamma(sum(x) + 1) - sum(v -> loggamma(v + 1), x)
+
+# dirichlet2 (brms 2.23): alpha_k = exp(mu_k) for every category, no precision
+@inline function _ll(f::Dirichlet2{L,K}, y, x, eta) where {L,K}
+    a = ntuple(j -> exp(eta[j]), Val(K))
+    v = loggamma(sum(a))
+    for k in 1:K
+        v += -loggamma(a[k]) + (a[k] - 1) * x[k]
+    end
+    return v
+end
+_ll_const(::Dirichlet2, y, t) = 0.0
+
 function _check_response(f::_MultiCat, y, t)
     isempty(f.Y) && return true
-    f isa Multinomial && _chk(all(v -> isinteger(v) && v >= 0, f.Y), "multinomial responses must be non-negative counts")
-    f isa DirichletFam && _chk(all(>(0), f.Y) && all(r -> isapprox(sum(r), 1; atol=1e-6), eachrow(f.Y)),
+    f isa _CountCat && _chk(all(v -> isinteger(v) && v >= 0, f.Y), "$(family_name(f)) responses must be non-negative counts")
+    f isa Union{DirichletFam,Dirichlet2} && _chk(all(>(0), f.Y) && all(r -> isapprox(sum(r), 1; atol=1e-6), eachrow(f.Y)),
                                "dirichlet responses must be positive proportions summing to one per row")
     return true
 end
@@ -77,6 +119,10 @@ end
 function _mc_probs(f::_MultiCat, eta)
     p = last(_cat_lse(Tuple(eta[1:(_ncat(f) - 1)])))
     return [1 - sum(p); collect(p)]
+end
+function _mc_probs(f::Dirichlet2, eta)
+    a = [exp(eta[k]) for k in 1:_ncat(f)]
+    return a ./ sum(a)
 end
 # logistic_normal: one draw of the proportions, and their mean by Monte Carlo
 function _ln_draw(rng, f::LogisticNormal, eta)
@@ -111,6 +157,24 @@ with the response given as columns: `cbind(a, b, c) ~ x`. As in
 the precision.
 """
 dirichlet(; link=nothing) = _make_family(DirichletFam, link)
+
+"""
+    dirichlet_multinomial(; link = :logit)
+
+Dirichlet-multinomial distribution: overdispersed counts in `K` categories,
+`cbind(a, b, c) ~ x`, as [`multinomial`](@ref) (a predictor `muc` per
+non-reference category) with a precision `phi`.
+"""
+dirichlet_multinomial(; link=nothing) = _make_family(DirichletMultinomial, link)
+
+"""
+    dirichlet2(; link = :log)
+
+brms's `dirichlet2()`: proportions in `K` categories, `cbind(a, b, c) ~ x`,
+with a predictor `muc` for EVERY category (log link) giving the Dirichlet
+concentrations directly, `alpha_c = exp(muc)`, and no separate precision.
+"""
+dirichlet2(; link=nothing) = _make_family(Dirichlet2, link)
 
 # =============================================================================
 # logistic_normal (brms): x = log(y_k / y_1), k = 2..K, is multivariate normal

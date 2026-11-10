@@ -27,8 +27,11 @@ struct PredGroup{G}
     nnew::Int
     mmJ::Matrix{Int}          # mm(): memberships at these observations (0 x 0 otherwise)
     mmW::Matrix{Float64}
+    mmZ::Array{Float64,3}     # N x q x M: member m's Z (mmc())
 end
-PredGroup(gb, idx, Z, nnew) = PredGroup(gb, idx, Z, nnew, Matrix{Int}(gb.mmJ), Matrix{Float64}(gb.mmW))
+PredGroup(gb, idx, Z, nnew) = PredGroup(gb, idx, Z, nnew, Matrix{Int}(gb.mmJ), Matrix{Float64}(gb.mmW),
+                                        Float64.(permutedims(gb.mmZt, (2, 1, 3))))
+PredGroup(gb, idx, Z, nnew, mmJ, mmW) = PredGroup(gb, idx, Z, nnew, mmJ, mmW, zeros(0, 0, 0))
 
 struct PredLin{P}
     p::P                      # the fitted LinPred (θ layout, means, ...)
@@ -40,10 +43,12 @@ struct PredLin{P}
     smZ::Vector{Matrix{Float64}}   # penalised smooth designs at these observations
     mex::Vector{Vector{Float64}}   # me(): observed x for new data (empty: training -> latent values)
     gpX::Vector{Matrix{Float64}}   # gp(): covariates of new data (empty: training)
+    carJ::Vector{Vector{Int}}      # car(): location of each new row, per term (empty: training)
+    lacTC::Vector{Any}             # latent autocorrelation: the new rows' structure (empty: training)
 end
 PredLin(p, Xc, offset, groups) =
     PredLin(p, Xc, offset, groups, Any[(m.xs, m.csp) for m in p.mo], _has_ar(p.ar), [Float64.(sb.Z) for sb in p.smooths],
-            Vector{Float64}[], Matrix{Float64}[])
+            Vector{Float64}[], Matrix{Float64}[], Vector{Int}[], Any[])
 
 struct PredNL{F,P,D}
     f::F
@@ -54,6 +59,23 @@ end
 struct _PredOpts
     rng::AbstractRNG
     mode::Symbol
+end
+
+# car(): the fitted location of each new row
+function _car_newJ(t, lv)
+    J = Int[]
+    for v in lv
+        if isempty(t.levels)
+            (v isa Real && isinteger(v) && 1 <= v <= t.Nloc) ||
+                throw(ArgumentError("car(): new data location `$v` is not a row of the model's W"))
+            push!(J, Int(v))
+        else
+            k = findfirst(==(string(v)), t.levels)
+            k === nothing && throw(ArgumentError("car(): new data location `$v` was not in the fitted model"))
+            push!(J, k)
+        end
+    end
+    return J
 end
 
 _keep_group(label, re_formula::Nothing) = true
@@ -95,7 +117,7 @@ function _prediction_preds(fit::BrmsFit, newdata; re_formula=nothing, allow_new_
         _rhs_atoms!(atoms, d.rhs)
     end
     uses_trials(info.family) && f.trials isa Atom && push!(atoms, f.trials)
-    append!(atoms, Atom.(f.nlvars))
+    append!(atoms, Atom.(_nl_allvars(f)))
     vals = Dict{Atom,AbstractVector}()
     for a in unique(atoms)
         v = _eval_atom(a, cols, f.mod)
@@ -130,8 +152,7 @@ function _prediction_preds(fit::BrmsFit, newdata; re_formula=nothing, allow_new_
         gs = PredGroup[]
         for (gb, (gt, gi, gspec)) in zip(p.groups, di.groups)
             _keep_group(gb.label, re_formula) || continue
-            Zx = model_matrix(gspec, vals, info.infos, N)
-            Z = gt.intercept ? hcat(ones(N), Zx) : Zx
+            Z = _group_Z(gt, gspec, vals, info.infos, N, 1)
             if !isempty(gt.mm)
                 mmJ = reduce(hcat, [map(_group_values(GroupTerm(true, Vector{Atom}[], m, false), vals)) do l
                                         haskey(gi.index, l) || throw(ArgumentError("mm(): new levels are not supported for predictions"))
@@ -140,7 +161,8 @@ function _prediction_preds(fit::BrmsFit, newdata; re_formula=nothing, allow_new_
                 M = length(gt.mm)
                 mmW = isempty(gt.mmw) ? fill(1 / M, N, M) : reduce(hcat, [Float64.(vals[a]) for a in gt.mmw])
                 gt.mmscale && (mmW = mmW ./ sum(mmW; dims=2))
-                push!(gs, PredGroup(gb, ones(Int, N), Z, 0, mmJ, mmW))
+                mmZ = cat((_group_Z(gt, gspec, vals, info.infos, N, m) for m in 1:M)...; dims=3)
+                push!(gs, PredGroup(gb, ones(Int, N), Z, 0, mmJ, mmW, mmZ))
                 continue
             end
             if gb.bylevel != ""
@@ -173,10 +195,17 @@ function _prediction_preds(fit::BrmsFit, newdata; re_formula=nothing, allow_new_
         _has_ar(p.ar) && @warn "predictions for new data ignore the ar() term (it needs the observed responses)" maxlog = 1
         mex = Vector{Float64}[Float64.(vals[a]) for (a, _, _) in di.rhs.me]
         gpX = Matrix{Float64}[reduce(hcat, [Float64.(vals[a]) for a in spec[1]]) for spec in di.rhs.gp]
-        PredLin(p, X .- Float64.(p.means'), offset, gs, mox, false, smZ, mex, gpX)
+        # car(): new rows at the fitted locations (brms: gr is required, new locations are not allowed)
+        carJ = Vector{Int}[_car_newJ(t, _eval_atom(spec[2], cols, f.mod)) for (t, spec) in zip(p.car, di.rhs.car)]
+        # latent autocorrelation: brms draws new residuals over the new rows' own groups / times
+        lacTC = Any[_ac_newtc(t.tc, di.rhs.ar, cols, f.mod, N) for t in p.lac]
+        PredLin(p, X .- Float64.(p.means'), offset, gs, mox, false, smZ, mex, gpX, carJ, lacTC)
     end
     preds = map(fit.density.preds) do p
-        p isa NLPred && return PredNL(p.f, map(newlin, p.pars), Tuple(Float64.(vals[Atom(v)]) for v in f.nlvars))
+        if p isa NLPred
+            nv = p.dpar === :mu && f.nl ? f.nlvars : _nlf_entry(f, p.dpar).vars
+            return PredNL(p.f, map(newlin, p.pars), Tuple(Float64.(vals[Atom(v)]) for v in nv))
+        end
         p isa ThresholdsCS && return typeof(p)(p.base, model_matrix(p.spec, vals, info.infos, N), p.bcs,
                                                  p.priors, p.labels, p.spec)
         if p isa Thresholds{true}
@@ -241,15 +270,11 @@ function _eta_pred(pl::PredLin, θ, N, opts)
             η .+= θ[m.bsp] .* (θ[m.meanme] .+ exp(θ[m.sdme]) .* θ[m.zme])
         end
     end
-    for t in p.car
-        N == length(t.J) || throw(ArgumentError("predictions for new data with car() terms are not supported yet"))
-        η .+= first(_car_generic(t, θ))
+    for (k, t) in enumerate(p.car)
+        η .+= isempty(pl.carJ) ? first(_car_generic(t, θ)) : _car_r(t, θ)[pl.carJ[k]]
     end
-    for t in p.lac
-        # latent autocorrelated residuals: training rows only (brms draws new
-        # residuals for new time points; not yet)
-        N == length(t.z) || throw(ArgumentError("predictions for new data with latent autocorrelation are not supported yet"))
-        η .+= first(_lac_generic(t, θ))
+    for (k, t) in enumerate(p.lac)
+        η .+= isempty(pl.lacTC) ? first(_lac_generic(t, θ)) : _lac_draw_new(t, pl.lacTC[k], θ, opts.rng)
     end
     for m in p.mi
         # (training rows only: new data would need its own imputation model)
@@ -268,7 +293,7 @@ function _eta_pred(pl::PredLin, θ, N, opts)
         for i in 1:N
             if !isempty(pg.mmJ)
                 for m in axes(pg.mmJ, 2)
-                    η[i] += pg.mmW[i, m] * dot(view(pg.Z, i, :), view(R, gb.rows, pg.mmJ[i, m]))
+                    η[i] += pg.mmW[i, m] * dot(view(pg.mmZ, i, :, m), view(R, gb.rows, pg.mmJ[i, m]))
                 end
                 continue
             end
@@ -375,8 +400,23 @@ function posterior_predict(fit::BrmsFit; newdata=nothing, rng=Random.default_rng
     fam = fit.info.family
     fam isa _MultiCat && return _multicat_draws(fit, newdata, :predict; rng=rng, kw...)
     fam isa TimeCov && return _tc_draws(fit, newdata, :predict; rng=rng, kw...)
+    if fam isa Union{GaussianSE,SEFamily}
+        # y | se(s): brms's predictive draws add the known se (add_sigma_se), the
+        # new rows' se for new data
+        se = if newdata === nothing
+            fam.se
+        else
+            f = fit.info.formula
+            cols = Tables.columntable(newdata)
+            Float64.(_eval_atom(f.extra[:se][1], cols, f.mod))
+        end
+        return _per_draw((eta, t, i) -> _rand_se(rng, fam, eta, t, se[i]), fit, newdata; rng=rng, kw...)
+    end
     return _per_draw((eta, t, i) -> _rand(rng, fam, eta, t), fit, newdata; rng=rng, kw...)
 end
+_rand_se(rng, ::GaussianSE{L,false}, eta, t, s) where {L} = eta[1] + s * randn(rng)
+_rand_se(rng, ::GaussianSE{L,true}, eta, t, s) where {L} = eta[1] + sqrt(s^2 + exp(2eta[2])) * randn(rng)
+_rand_se(rng, f::SEFamily, eta, t, s) = _rand(rng, f.fam, _se_eta(f, s, eta[1], Base.tail(eta)), t)
 
 """
     log_lik(fit; newdata=nothing, re_formula=nothing, allow_new_levels=false)
@@ -407,13 +447,12 @@ function log_lik(fit::BrmsFit; newdata=nothing, kw...)
     end
     # the family's per-observation data (log y, trials, ...) — what `_ll`
     # reads as its `x` argument, exactly as in the density
-    if newdata !== nothing && fam isa Censored
+    # (cens / trunc / se data of the new rows: the wrappers rebuilt from them)
+    if newdata !== nothing && _addition_base(fam) !== fam
         f = fit.info.formula
         cols = Tables.columntable(newdata)
-        codes = cens_code.(_eval_atom(f.cens, cols, f.mod))
-        y2 = f.cens_y2 === nothing ? zeros(length(y)) :
-             [ismissing(v) ? 0.0 : Float64(v) for v in _eval_atom(f.cens_y2, cols, f.mod)]
-        fam = Censored(fam.fam, codes, y2)
+        y2raw = f.cens_y2 === nothing ? nothing : _eval_atom(f.cens_y2, cols, f.mod)
+        fam = _addition_family(_addition_base(fam), f, a -> _eval_atom(a, cols, f.mod), y, y2raw, length(y))
     end
     xd = _xdata(fam, y, trials)
     return _per_draw(fit, newdata; kw...) do eta, t, i
@@ -440,8 +479,8 @@ function _multicat_draws(fit::BrmsFit, newdata, what; re_formula=nothing, allow_
     preds, N, _ = _prediction_preds(fit, newdata; re_formula, allow_new_levels)
     opts = _PredOpts(rng, Symbol(sample_new_levels))
     n = newdata === nothing ? vec(sum(fam.Y; dims=2)) :
-        trials === nothing ? fill(fam isa Multinomial ? NaN : 1.0, N) : Float64.(trials)
-    fam isa Multinomial && what === :predict && any(isnan, n) &&
+        trials === nothing ? fill(fam isa _CountCat ? NaN : 1.0, N) : Float64.(trials)
+    fam isa _CountCat && what === :predict && any(isnan, n) &&
         throw(ArgumentError("posterior_predict for new data needs `trials =` (the total counts)"))
     D = reshape(fit.draws, size(fit.draws, 1), :)
     K = _ncat(fam)
@@ -457,9 +496,14 @@ function _multicat_draws(fit::BrmsFit, newdata, what; re_formula=nothing, allow_
             end
             p = _mc_probs(fam, eta)
             if what === :epred
-                out[s, i, :] .= fam isa Multinomial ? n[i] .* p : p
+                out[s, i, :] .= fam isa _CountCat ? n[i] .* p : p
             elseif fam isa Multinomial
                 out[s, i, :] .= rand(rng, Distributions.Multinomial(round(Int, n[i]), p))
+            elseif fam isa DirichletMultinomial
+                q = rand(rng, Distributions.Dirichlet(exp(eta[end]) .* p))
+                out[s, i, :] .= rand(rng, Distributions.Multinomial(round(Int, n[i]), q))
+            elseif fam isa Dirichlet2
+                out[s, i, :] .= rand(rng, Distributions.Dirichlet([exp(eta[k]) for k in 1:K]))
             else
                 out[s, i, :] .= rand(rng, Distributions.Dirichlet(exp(eta[end]) .* p))
             end

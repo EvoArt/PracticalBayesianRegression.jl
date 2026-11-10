@@ -29,28 +29,28 @@ const _SQRT_2_OVER_PI = sqrt(2 / π)
 # --- skew_normal: brms's mean/sd parameterisation (mu, sigma, alpha) ------------
 dpars(::SkewNormal) = (:mu, :sigma, :alpha)
 aux_bounds(::SkewNormal, d::Symbol) = d === :alpha ? (:identity, -Inf) : (:log, 0.0)
-dpar_link_name(::SkewNormal, d::Symbol) = d === :mu ? "identity" : d === :alpha ? "identity" : "log"
+dpar_link_name(f::SkewNormal, d::Symbol) = d === :mu ? link_name(link(f)) : d === :alpha ? "identity" : "log"
 function _sn_params(mu, ls, alpha)
     delta = alpha / sqrt(1 + alpha^2)
     omega = exp(ls) / sqrt(1 - _pv(delta, 2 / π) * delta^2)
     xi = mu - omega * delta * _pv(delta, _SQRT_2_OVER_PI)
     return xi, omega, delta
 end
-@inline function _ll(::SkewNormal, y, x, eta)
-    xi, omega, _ = _sn_params(eta[1], eta[2], eta[3])
+@inline function _ll(f::SkewNormal, y, x, eta)
+    xi, omega, _ = _sn_params(linkinv(link(f), eta[1]), eta[2], eta[3])
     z = (y - xi) / omega
     return _pv(omega, _LOG2) - log(omega) + normlogpdf(z) + normlogcdf(eta[3] * z)
 end
-_mean(::SkewNormal, eta, t) = eta[1]
-function _rand(rng, ::SkewNormal, eta, t)
-    xi, omega, delta = _sn_params(eta[1], eta[2], eta[3])
+_mean(f::SkewNormal, eta, t) = linkinv(link(f), eta[1])
+function _rand(rng, f::SkewNormal, eta, t)
+    xi, omega, delta = _sn_params(linkinv(link(f), eta[1]), eta[2], eta[3])
     return xi + omega * (delta * abs(randn(rng)) + sqrt(1 - delta^2) * randn(rng))
 end
 
 # --- exgaussian: brms's (mu = mean, sigma, beta = exponential scale) -------------
 dpars(::ExGaussian) = (:mu, :sigma, :beta)
-@inline function _ll(::ExGaussian, y, x, eta)
-    mu, s, b = eta[1], exp(eta[2]), exp(eta[3])
+@inline function _ll(f::ExGaussian, y, x, eta)
+    mu, s, b = linkinv(link(f), eta[1]), exp(eta[2]), exp(eta[3])
     lam = 1 / b
     m = mu - b                              # mean of the gaussian component
     return log(lam / 2) + lam / 2 * (2m + lam * s^2 - 2y) + logerfc((m + lam * s^2 - y) / (sqrt(2) * s))
@@ -67,7 +67,13 @@ end
     T = typeof(s)
     return (s, b, inv(b), s * s, inv(T(sqrt(2)) * s), log(b) + T(log(2)) + 1)
 end
-@inline function _ll_grad_pre(::ExGaussian, y, x, mu, p)
+# any link: d/d eta = d/d mu * mu_eta (exactly 1 for the identity link)
+@inline function _ll_grad_pre(f::ExGaussian, y, x, e, p)
+    L = link(f)
+    v, (gmu, gs, gb) = _exg_grad(y, linkinv(L, e), p)
+    return v, (gmu * mu_eta(L, e), gs, gb)
+end
+@inline function _exg_grad(y, mu, p)
     s, b, ib, s2, k, lc = p
     T = typeof(s)
     d = mu - y
@@ -83,8 +89,8 @@ end
     return v, (gmu, gs, gb)
 end
 @inline _ll_grad(fam::ExGaussian, y, x, eta::NTuple{3,T}) where {T} = _ll_grad_pre(fam, y, x, eta[1], _pre(fam, eta))
-_mean(::ExGaussian, eta, t) = eta[1]
-_rand(rng, ::ExGaussian, eta, t) = eta[1] - exp(eta[3]) + exp(eta[2]) * randn(rng) + exp(eta[3]) * randexp(rng)
+_mean(f::ExGaussian, eta, t) = linkinv(link(f), eta[1])
+_rand(rng, f::ExGaussian, eta, t) = linkinv(link(f), eta[1]) - exp(eta[3]) + exp(eta[2]) * randn(rng) + exp(eta[3]) * randexp(rng)
 
 # --- inverse.gaussian: mean mu, shape (brms default link 1/mu^2) -------------------
 dpars(::InverseGaussian) = (:mu, :shape)
@@ -99,16 +105,16 @@ _check_response(::InverseGaussian, y, t) = _chk(all(>(0), y), "responses must be
 
 # --- frechet: mean mu (log), shape nu > 1 (logm1); scale = mu / Gamma(1 - 1/nu) ----
 dpars(::Frechet) = (:mu, :nu)
-@inline function _ll(::Frechet, y, x, eta)
+@inline function _ll(f::Frechet, y, x, eta)
     nu = 1 + exp(eta[2])
-    ls = eta[1] - loggamma(1 - 1 / nu)     # log scale
+    ls = _logmu(link(f), eta[1]) - loggamma(1 - 1 / nu)     # log scale
     lz = log(y) - ls
     return log(nu) - ls - (1 + nu) * lz - exp(-nu * lz)
 end
-_mean(::Frechet, eta, t) = exp(eta[1])
-function _rand(rng, ::Frechet, eta, t)
+_mean(f::Frechet, eta, t) = linkinv(link(f), eta[1])
+function _rand(rng, f::Frechet, eta, t)
     nu = 1 + exp(eta[2])
-    return rand(rng, D_.Frechet(nu, exp(eta[1] - loggamma(1 - 1 / nu))))
+    return rand(rng, D_.Frechet(nu, linkinv(link(f), eta[1]) / exp(loggamma(1 - 1 / nu))))
 end
 _check_response(::Frechet, y, t) = _chk(all(>(0), y), "responses must be positive")
 
@@ -116,16 +122,16 @@ _check_response(::Frechet, y, t) = _chk(all(>(0), y), "responses must be positiv
 dpars(::ShiftedLognormal) = (:mu, :sigma, :ndt)
 aux_bounds(::ShiftedLognormal, d::Symbol) = d === :ndt ? (:logit, 0.0) : (:log, 0.0)
 aux_ub(f::ShiftedLognormal, d::Symbol) = d === :ndt ? f.miny : 1.0
-dpar_link_name(::ShiftedLognormal, d::Symbol) = d === :mu ? "identity" : d === :ndt ? "logit (0, min_Y)" : "log"
+dpar_link_name(f::ShiftedLognormal, d::Symbol) = d === :mu ? link_name(link(f)) : d === :ndt ? "logit (0, min_Y)" : "log"
 prior_link(::ShiftedLognormal) = :log
 @inline function _ll(f::ShiftedLognormal, y, x, eta)
     ndt = _pv(eta[3], f.miny) * logistic(eta[3])
     ly = log(y - ndt)
-    r = (ly - eta[1]) * exp(-eta[2])
+    r = (ly - linkinv(link(f), eta[1])) * exp(-eta[2])
     return -r * r / 2 - eta[2] - ly - _pv(r, _LOG_2PI_HALF)
 end
-_mean(f::ShiftedLognormal, eta, t) = f.miny * logistic(eta[3]) + exp(eta[1] + exp(2eta[2]) / 2)
-_rand(rng, f::ShiftedLognormal, eta, t) = f.miny * logistic(eta[3]) + exp(eta[1] + exp(eta[2]) * randn(rng))
+_mean(f::ShiftedLognormal, eta, t) = f.miny * logistic(eta[3]) + exp(linkinv(link(f), eta[1]) + exp(2eta[2]) / 2)
+_rand(rng, f::ShiftedLognormal, eta, t) = f.miny * logistic(eta[3]) + exp(linkinv(link(f), eta[1]) + exp(eta[2]) * randn(rng))
 _check_response(::ShiftedLognormal, y, t) = _chk(all(>(0), y), "responses must be positive")
 
 # the default upper bound of a logit-scale aux parameter
@@ -152,6 +158,17 @@ function _rand(rng, f::AsymLaplace, eta, t)
     u = rand(rng)
     return u < q ? mu + s / (1 - q) * log(u / q) : mu - s / q * log((1 - u) / (1 - q))
 end
+
+# --- zero_inflated_asym_laplace (brms): y = 0 is log zi; else log(1 - zi) + asym_laplace
+dpars(::ZeroInflatedAsymLaplace) = (:mu, :sigma, :quantile, :zi)
+_zial_base(::ZeroInflatedAsymLaplace{L}) where {L} = AsymLaplace{L}()
+@inline function _ll(f::ZeroInflatedAsymLaplace, y, x, eta)
+    y == 0 && return -log1pexp(-eta[4])
+    return -log1pexp(eta[4]) + _ll(_zial_base(f), y, x, (eta[1], eta[2], eta[3]))
+end
+_mean(f::ZeroInflatedAsymLaplace, eta, t) = (1 - logistic(eta[4])) * _mean(_zial_base(f), (eta[1], eta[2], eta[3]), t)
+_rand(rng, f::ZeroInflatedAsymLaplace, eta, t) =
+    rand(rng) < logistic(eta[4]) ? 0.0 : _rand(rng, _zial_base(f), (eta[1], eta[2], eta[3]), t)
 
 # --- von_mises: mu = 2 atan(eta) (tan_half link), precision kappa -------------------
 # log I0(kappa) through the scaled Bessel function (no overflow); ForwardDiff has
@@ -214,14 +231,15 @@ _check_response(::ZeroOneInflatedBeta, y, t) = _chk(all(v -> 0 <= v <= 1, y), "z
 # --- discrete_weibull: P(Y >= y) = mu^(y^shape), mu in (0, 1) ---------------------
 dpars(::DiscreteWeibull) = (:mu, :shape)
 @inline function _ll(f::DiscreteWeibull, y, x, eta)
-    lmu = -log1pexp(-eta[1])                              # log mu, logit link
+    lmu = _logmu(link(f), eta[1])                         # log mu; mu must be in (0, 1)
     k = exp(eta[2])
+    (isfinite(lmu) && lmu < 0) || return oftype(lmu * k, -Inf)
     a = (y == 0 ? zero(k) : y^k) * lmu                    # log mu^(y^k)
     b = (y + 1)^k * lmu
     return a + log1mexp(b - a)                            # log(mu^(y^k) - mu^((y+1)^k))
 end
 function _mean(f::DiscreteWeibull, eta, t)
-    mu = logistic(eta[1]); k = exp(eta[2])
+    mu = linkinv(link(f), eta[1]); k = exp(eta[2])
     # E[Y] = sum_{y >= 1} P(Y >= y)
     s = 0.0
     for y in 1:100_000
@@ -231,7 +249,7 @@ function _mean(f::DiscreteWeibull, eta, t)
     end
     return s
 end
-_rand(rng, f::DiscreteWeibull, eta, t) = floor((log(rand(rng)) / log(logistic(eta[1])))^(1 / exp(eta[2])))
+_rand(rng, f::DiscreteWeibull, eta, t) = floor((log(rand(rng)) / _logmu(link(f), eta[1]))^(1 / exp(eta[2])))
 _check_response(::DiscreteWeibull, y, t) = _chk(all(v -> isinteger(v) && v >= 0, y), "count responses must be non-negative integers")
 
 # --- negbinomial2: negative binomial with sigma = 1 / shape ------------------------
@@ -282,24 +300,29 @@ function _logZ_cmp(lmu, nu)
     end
     return acc
 end
+# mu = exp(eta) for the log link; other links: log mu = log(linkinv(eta)), as
+# brms's com_poisson_lpmf (which calls com_poisson_log_lpmf at log(mu))
 @inline function _ll(f::ComPoisson, y, x, eta)
     nu = exp(eta[2])
-    return y * eta[1] - nu * loggamma(y + 1) - _logZ_cmp(eta[1], nu)
+    lmu = _logmu(link(f), eta[1])
+    isfinite(lmu) || return oftype(lmu * nu, -Inf)
+    return y * lmu - nu * loggamma(y + 1) - _logZ_cmp(lmu, nu)
 end
-function _cmp_pmf(eta; kmax=10_000)
-    lz = _logZ_cmp(Float64(eta[1]), exp(Float64(eta[2])))
+function _cmp_pmf(f::ComPoisson, eta; kmax=10_000)
+    lmu = Float64(_logmu(link(f), eta[1]))
+    lz = _logZ_cmp(lmu, exp(Float64(eta[2])))
     nu = exp(Float64(eta[2]))
     ps = Float64[]
     for k in 0:kmax
-        p = exp(k * eta[1] - nu * loggamma(k + 1) - lz)
+        p = exp(k * lmu - nu * loggamma(k + 1) - lz)
         push!(ps, p)
         k > 5 && p < 1e-14 && sum(ps) > 0.999999 && break
     end
     return ps
 end
-_mean(f::ComPoisson, eta, t) = (p = _cmp_pmf(eta); sum((k - 1) * p[k] for k in eachindex(p)) / sum(p))
+_mean(f::ComPoisson, eta, t) = (p = _cmp_pmf(f, eta); sum((k - 1) * p[k] for k in eachindex(p)) / sum(p))
 function _rand(rng, f::ComPoisson, eta, t)
-    p = _cmp_pmf(eta); u = rand(rng) * sum(p); c = 0.0
+    p = _cmp_pmf(f, eta); u = rand(rng) * sum(p); c = 0.0
     for k in eachindex(p)
         c += p[k]
         u <= c && return Float64(k - 1)

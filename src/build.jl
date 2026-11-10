@@ -91,7 +91,7 @@ end
 # with its own formula gets its Intercept scale on its own (log) link.
 _has_logscale(::Family) = false
 _has_logscale(::Union{Lognormal,HurdleLognormal,ShiftedLognormal}) = true
-_has_logscale(f::Union{Censored,Truncated,TimeCov}) = _has_logscale(f.fam)
+_has_logscale(f::Union{Censored,Truncated,TimeCov,SEFamily,CensTrunc}) = _has_logscale(f.fam)
 _sigma_scale(fam, y) = last(_loc_scale_link(_has_logscale(fam) ? :log : :identity, y))
 
 # The Intercept of a distributional parameter with its own formula: brms 2.23's
@@ -127,7 +127,7 @@ end
 
 # cens() / trunc() wrappers: the base family's defaults (its `isa` rules, e.g.
 # negbinomial's inv_gamma shape, must see the base family, not the wrapper)
-_default_prior(c::Union{Censored,Truncated}, class::Symbol, dpar::Symbol, y) = _default_prior(c.fam, class, dpar, y)
+_default_prior(c::Union{Censored,Truncated,SEFamily,CensTrunc}, class::Symbol, dpar::Symbol, y) = _default_prior(c.fam, class, dpar, y)
 
 function _default_prior(fam::Family, class::Symbol, dpar::Symbol, y)
     loc, scale = _default_loc_scale(fam, y)
@@ -203,11 +203,12 @@ function _all_atoms(f::BrmsFormula)
     f.trials isa Atom && push!(atoms, f.trials)
     f.weights isa Atom && push!(atoms, f.weights)
     f.cens isa Atom && push!(atoms, f.cens)
-    for v in f.nlvars
+    for v in _nl_allvars(f)
         push!(atoms, Atom(v))
     end
     haskey(f.extra, :se) && push!(atoms, f.extra[:se][1])
     haskey(f.extra, :subset) && push!(atoms, f.extra[:subset])
+    haskey(f.extra, :index) && push!(atoms, f.extra[:index])
     haskey(f.extra, :vars) && append!(atoms, f.extra[:vars])
     haskey(f.extra, :dec) && push!(atoms, f.extra[:dec])
     haskey(f.extra, :thres) && f.extra[:thres][2] !== nothing && push!(atoms, f.extra[:thres][2])
@@ -228,6 +229,7 @@ function _rhs_atoms!(atoms, rhs::RHS)
         push!(atoms, _is_mo(a) ? _atom(a.ex.args[2]) : a)
     end
     append!(atoms, rhs.mi)
+    append!(atoms, Atom[a for a in rhs.miidx if a !== nothing])
     foreach(c -> push!(atoms, c[2]), rhs.car)
     for gt in rhs.groups
         gt.by === nothing || push!(atoms, gt.by)
@@ -337,56 +339,34 @@ function build_model(formula, data; family=gaussian(), prior=PriorSpec[], T::Typ
         f.trials === nothing && throw(ArgumentError("the binomial family needs `y | trials(n) ~ ...`"))
         f.trials isa Int ? fill(f.trials, N) : Int.(vals[f.trials])
     else
-        f.trials === nothing || fam isa Multinomial ||
+        f.trials === nothing || fam isa _CountCat ||
             throw(ArgumentError("trials() is only meaningful for the binomial family"))
         Int[]
     end
-    if f.cens !== nothing && fam isa Cox
-        # cox: the censoring codes are the family's per-observation data (brms)
-        codes = Float64.(cens_code.(vals[f.cens]))
-        all(c -> c in (-1, 0, 1), codes) || throw(ArgumentError("cox(): only left / right censoring is supported"))
-        fam = typeof(fam)(codes)
-    elseif f.cens !== nothing
-        fam isa _CENSORABLE || throw(ArgumentError(
-            "censoring is implemented for gaussian (identity), lognormal, weibull, exponential and the count families " *
-            "(poisson, negbinomial, negbinomial2, geometric, binomial, beta_binomial, discrete_weibull, com_poisson) so far, " *
-            "not $(family_name(fam))"))
-        codes = cens_code.(vals[f.cens])
-        y2 = y2raw === nothing ? zeros(N) : [ismissing(v) ? 0.0 : Float64(v) for v in y2raw]
-        for i in eachindex(codes)
-            codes[i] == 2 && !(y2[i] > y[i]) &&
-                throw(ArgumentError("interval-censored observation $i needs y2 > y (got y = $(y[i]), y2 = $(y2[i]))"))
-        end
-        fam = Censored(fam, codes, y2)
-    end
-    if haskey(f.extra, :se)
-        fam isa Gaussian{IdentityLink} || throw(ArgumentError("se() is supported for the gaussian family (identity link)"))
-        a, sig = f.extra[:se]
-        se = Float64.(vals[a])
-        all(>(0), se) || throw(ArgumentError("standard errors in se() must be positive"))
-        fam = GaussianSE{IdentityLink,sig}(se)
-    end
-    if haskey(f.extra, :trunc)
-        f.cens === nothing || throw(ArgumentError("trunc() together with cens() is not supported yet"))
-        fam isa _CENSORABLE || throw(ArgumentError(
-            "trunc() is implemented for gaussian (identity), lognormal, weibull, exponential and the count families so far"))
-        bv(b) = b isa Atom ? Float64.(vals[b]) : fill(Float64(b), N)
-        lbv, ubv = bv(f.extra[:trunc][1]), bv(f.extra[:trunc][2])
-        all(lbv .< ubv) || throw(ArgumentError("trunc() needs lb < ub"))
-        fam = Truncated(fam, lbv, ubv)
-    end
+    fam = _addition_family(fam, f, a -> vals[a], y, y2raw, N)
     Jmi = Int[]
     if get(f.extra, :mi, false)
-        fam isa Union{Gaussian{IdentityLink},Student{IdentityLink}} ||
-            throw(ArgumentError("y | mi(): imputation is supported for gaussian/student (identity) responses"))
         Jmi = findall(isnan, y)
-        y[Jmi] .= 0.0                        # placeholders: the values are θ[ymi]
         # :auto (a univariate model, or a response no mi() term uses): the missing
         # responses integrate out exactly -- their rows leave the likelihood
-        # (weight 0) and their draws are generated after sampling (mimarg.jl)
+        # (weight 0) and their draws are generated after sampling (mimarg.jl), so
+        # any family works. Sampled values (θ entries, brms) need d ll / d y on
+        # the real line: the gaussian / student (identity) location families.
         mi_mode in (:auto, :sample, :drop) || throw(ArgumentError("mi must be :auto or :sample"))
         mi_mode === :auto && (mi_mode = :drop)
+        loc = fam isa Union{Gaussian{IdentityLink},Student{IdentityLink}}
+        # brms allows mi() for these continuous families (family_info "mi")
+        (mi_mode === :drop || fam isa Union{Gaussian,Student,Lognormal,SkewNormal,ExGaussian,InverseGaussian,GammaFamily,
+                                            Weibull,Frechet,GenExtremeValue,AsymLaplace,Exponential,BetaFamily,VonMises}) ||
+            throw(ArgumentError("y | mi() with sampled missing values is not available for $(family_name(fam)) " *
+                                "responses (brms: continuous families)"))
+        isempty(Jmi) || length(Jmi) < N ||
+            throw(ArgumentError("y | mi(): every response value is missing"))
+        # placeholders (θ[ymi] when sampled; weight-0 rows when dropped): a value
+        # inside the family's support, so the dropped rows' terms stay finite
+        y[Jmi] .= loc ? 0.0 : y[findfirst(!isnan, y)]
     end
+    haskey(f.extra, :bhaz) && !(fam isa Cox) && throw(ArgumentError("bhaz() is for the cox family"))
     # dec(): the wiener family's boundary per response (and ndt < min(rt))
     if haskey(f.extra, :dec)
         fam isa Wiener || throw(ArgumentError("dec() is for the wiener family"))
@@ -399,10 +379,10 @@ function build_model(formula, data; family=gaussian(), prior=PriorSpec[], T::Typ
     end
     # residual covariance structures (timecov.jl): the family carries the structure
     ac = f.dpars[1].rhs.ar
-    # (other families' ar/ma/arma(cov = TRUE) and cosy(): brms's latent residuals,
+    # (other families' ar/ma/arma(cov = TRUE), cosy() and unstr(): brms's latent residuals,
     # a term of mu's predictor -- see _build_linpred)
     if ac !== nothing && ac[5] !== :arma &&
-       (fam isa Union{Gaussian{IdentityLink},Student{IdentityLink}} || !(ac[5] in (:arma_cov, :cosy)))
+       (fam isa Union{Gaussian{IdentityLink},Student{IdentityLink}} || !(ac[5] in (:arma_cov, :cosy, :unstr)))
         (f.cens === nothing && !haskey(f.extra, :se) && !haskey(f.extra, :trunc) && isempty(Jmi) && f.weights === nothing) ||
             throw(ArgumentError("$(ac[5]) terms cannot be combined with cens(), se(), trunc(), mi() or weights() yet"))
         fam = _timecov_family(fam, ac, vals, y, rows, N0)
@@ -428,10 +408,12 @@ function build_model(formula, data; family=gaussian(), prior=PriorSpec[], T::Typ
     fam isa Union{OrdinalFamily,HurdleCumulative} && any(d -> d.dpar === :disc, f.dpars) && (fam = Disc{typeof(fam)}())
 
     # check the dpar formulas against the family
+    length(_nlf_entries(f)) == length(get(f.extra, :nlf_raw, Any[])) ||
+        throw(ArgumentError("nlf(): a non-linear formula has no parameter with a formula (`par ~ ...`, in nlf() or lf())"))
     fdp = dpars(fam)
     for d in f.dpars
         fam isa Union{Categorical,Mixture,_MultiCat} && d.dpar === :mu && continue    # the shared formula of every mu<k>
-        d.dpar in f.nlpars && continue                       # non-linear parameters
+        d.dpar in _nl_allpars(f) && continue                 # non-linear parameters (nl = true, nlf())
         d.dpar in fdp || throw(ArgumentError("family $(family_name(fam)) has no parameter `$(d.dpar)` (it has $(join(fdp, ", ")))"))
     end
 
@@ -498,6 +480,12 @@ function build_model(formula, data; family=gaussian(), prior=PriorSpec[], T::Typ
             push!(preds, _build_nlpred(f, vals, infos, N, T, fam, y, user, table, take, dinfo))
             continue
         end
+        if (e = _nlf_entry(f, dp)) !== nothing
+            # nlf(dpar ~ ...): the parameter's own non-linear predictor (link scale)
+            push!(preds, _build_nlpred(f, vals, infos, N, T, fam, y, user, table, take, dinfo;
+                                       dp, fun=e.fun, pars=e.pars, vars=e.vars))
+            continue
+        end
         if dp === :cortime
             # unstr(): LKJ correlation over the time levels (class cortime, brms lkj(1))
             D = fam.nmax
@@ -517,9 +505,19 @@ function build_model(formula, data; family=gaussian(), prior=PriorSpec[], T::Typ
             row = _lookup_prior(user, :sbhaz, "", "", "")
             alpha = row === nothing ? 1.0 : Float64(row.prior.alpha)
             push!(table, PriorSpec(DirichletPrior(alpha), :sbhaz, "", "", "", row === nothing ? :default : :user))
-            bb = BhazBasis(y)
+            bh = get(f.extra, :bhaz, Dict{Symbol,Any}())
+            bb = BhazBasis(y; df=get(bh, :df, 5), knots=get(bh, :knots, nothing), bknots=get(bh, :bknots, nothing))
             Zb, Zc = _bhaz_matrices(bb, y)
-            push!(preds, BhazSimplex{T}(:sbhaz, take(size(Zb, 2) - 1), alpha, T.(Zb), T.(Zc), bb))
+            if fam isa Cox && _cox_trunc(fam)
+                # trunc(): I-spline rows at each bound (0 where the bound is absent)
+                K = size(Zc, 2)
+                rowat(v, has) = has ? _bhaz_rows(bb, v)[2] : zeros(K)
+                Zl = reduce(vcat, [permutedims(rowat(fam.lb[i], fam.lb[i] > 0)) for i in 1:N])
+                Zu = reduce(vcat, [permutedims(rowat(fam.ub[i], isfinite(fam.ub[i]))) for i in 1:N])
+                push!(preds, BhazSimplex{T}(:sbhaz, take(K - 1), alpha, T.(Zb), T.(Zc), bb, T.(Zl), T.(Zu)))
+            else
+                push!(preds, BhazSimplex{T}(:sbhaz, take(size(Zb, 2) - 1), alpha, T.(Zb), T.(Zc), bb))
+            end
             continue
         end
         if dp === :theta
@@ -621,6 +619,108 @@ end
 
 # non-tabular data for terms such as car(W): brms's `data2`, else the formula's module
 const _DATA2 = Ref{Any}((nothing, Main))
+# The response addition terms that wrap the family with per-observation data:
+# cox's censoring codes, cens(), se(), trunc() (and cens() with trunc()).
+# `getv(atom)` gives an atom's values on the rows used, so predictions on new
+# data rebuild the wrappers from the new rows (`_addition_base` undoes them).
+function _addition_family(fam, f, getv, y, y2raw, N)
+    if f.cens !== nothing && fam isa Cox
+        # cox: the censoring codes are the family's per-observation data (brms)
+        codes = Float64.(cens_code.(getv(f.cens)))
+        all(c -> c in (-1, 0, 1), codes) || throw(ArgumentError("cox(): only left / right censoring is supported"))
+        fam = typeof(fam)(codes)
+    elseif f.cens !== nothing
+        fam isa _CENSORABLE || throw(ArgumentError("cens() is not available for the $(family_name(fam)) family"))
+        codes = cens_code.(getv(f.cens))
+        y2 = y2raw === nothing ? zeros(N) : [ismissing(v) ? 0.0 : Float64(v) for v in y2raw]
+        for i in eachindex(codes)
+            codes[i] == 2 && !(y2[i] > y[i]) &&
+                throw(ArgumentError("interval-censored observation $i needs y2 > y (got y = $(y[i]), y2 = $(y2[i]))"))
+        end
+        fam = Censored(fam, codes, y2)
+    end
+    if haskey(f.extra, :se)
+        fam isa Union{Gaussian,Student,SkewNormal} ||
+            throw(ArgumentError("se() is supported for the gaussian, student and skew_normal families (as brms)"))
+        a, sig = f.extra[:se]
+        se = Float64.(getv(a))
+        all(>(0), se) || throw(ArgumentError("standard errors in se() must be positive"))
+        # gaussian identity: the closed form; otherwise the base family at the total scale
+        fam = fam isa Gaussian{IdentityLink} ? GaussianSE{IdentityLink,sig}(se) : SEFamily{typeof(fam),sig}(fam, se)
+    end
+    if haskey(f.extra, :trunc) && fam isa Cox
+        # cox: the bounds' cumulative hazards are rows of the baseline-hazard block
+        bv0(b) = b isa Atom ? Float64.(getv(b)) : fill(Float64(b), N)
+        lbv, ubv = bv0(f.extra[:trunc][1]), bv0(f.extra[:trunc][2])
+        all(lbv .< ubv) || throw(ArgumentError("trunc() needs lb < ub"))
+        all(i -> lbv[i] <= y[i] <= ubv[i], eachindex(y)) || throw(ArgumentError("responses must lie within their trunc() bounds"))
+        codes = isempty(fam.codes) ? zeros(N) : fam.codes
+        return typeof(fam)(codes, lbv, ubv)
+    end
+    if haskey(f.extra, :trunc)
+        tbase = fam isa Censored ? fam.fam : fam
+        tbase isa _CENSORABLE || throw(ArgumentError("trunc() is not available for the $(family_name(tbase)) family"))
+        bv(b) = b isa Atom ? Float64.(getv(b)) : fill(Float64(b), N)
+        lbv, ubv = bv(f.extra[:trunc][1]), bv(f.extra[:trunc][2])
+        all(lbv .< ubv) || throw(ArgumentError("trunc() needs lb < ub"))
+        # with cens(): brms's censored term minus the truncation normaliser
+        fam = fam isa Censored ? CensTrunc(fam.fam, fam.codes, fam.y2, lbv, ubv) : Truncated(fam, lbv, ubv)
+    end
+    return fam
+end
+_addition_base(fam::Family) = fam
+_addition_base(c::Union{Censored,Truncated,CensTrunc,SEFamily}) = c.fam
+_addition_base(::GaussianSE{L}) where {L} = Gaussian{L}()
+_addition_base(::Cox{L}) where {L} = Cox{L}()
+
+# xt = list(nb = NB, penalty = P): the named entries, objects from data2 (or the module)
+function _eval_xt(ex)
+    (ex isa Expr && ex.head == :call && ex.args[1] === :list) ||
+        throw(ArgumentError("xt must be list(nb = ...) or list(penalty = ...), got `$ex`"))
+    out = Dict{Symbol,Any}()
+    for a in ex.args[2:end]
+        (a isa Expr && a.head == :kw) || throw(ArgumentError("xt = list(name = value, ...)"))
+        v = a.args[2]
+        out[a.args[1]] = v isa Symbol ? _lookup_data2(v) : v
+    end
+    return out
+end
+
+# s(x, g, bs = "fs"): exactly one factor covariate (mgcv), at least one numeric
+function _build_fs(covs, cols, infos, k, base, lab, by)
+    by === nothing || throw(ArgumentError("s(..., bs = \"fs\") with by = is not supported"))
+    fpos = findall(a -> iscategorical(infos[a]), covs)
+    length(fpos) == 1 || throw(ArgumentError("s(..., bs = \"fs\") needs exactly one factor covariate"))
+    length(covs) >= 2 || throw(ArgumentError("s(..., bs = \"fs\") needs a numeric covariate besides the factor"))
+    f = covs[only(fpos)]
+    levels = [_level_name(l) for l in infos[f].levels]
+    return fss(cols, only(fpos), levels; k, base, label=lab)
+end
+
+# --- mmc(x1, x2) in (1 + mmc(x1, x2) | mm(g1, g2)): member-specific covariates ----
+_is_mmc(a::Atom) = a.ex isa Expr && a.ex.head == :call && a.ex.args[1] === :mmc
+function _check_mmc(gt)
+    for t in gt.terms, a in t
+        _is_mmc(a) || continue
+        isempty(gt.mm) && throw(ArgumentError("mmc() is for multi-membership terms: (1 + mmc(x1, x2) | mm(g1, g2))"))
+        length(a.ex.args) - 1 == length(gt.mm) ||
+            throw(ArgumentError("$(a.label): one variable per mm() member ($(length(gt.mm)))"))
+        length(t) == 1 || throw(ArgumentError("mmc() in an interaction is not supported"))
+    end
+end
+# a group term's Z with every mmc() atom at member m's variable (m = 1 for the
+# design itself; any member for an ordinary term)
+function _group_Z(gt, gspec, vals, infos, N, m)
+    if any(_is_mmc(a) for t in gt.terms for a in t)
+        vals = copy(vals)
+        for t in gt.terms, a in t
+            _is_mmc(a) && (vals[a] = Float64[r[m] for r in vals[a]])
+        end
+    end
+    Zx = model_matrix(gspec, vals, infos, N)
+    return gt.intercept ? hcat(ones(N), Zx) : Zx
+end
+
 function _lookup_data2(ex)
     d2, mod = _DATA2[]
     if ex isa Symbol
@@ -705,8 +805,10 @@ function _finish_shared!(preds, shared, table, user, fam, y, T, take)
     return preds
 end
 
-function _build_nlpred(f, vals, infos, N, T, fam, y, user, table, take, dinfo)
-    pars = map(f.nlpars) do a
+function _build_nlpred(f, vals, infos, N, T, fam, y, user, table, take, dinfo;
+                       dp=:mu, fun=f.nlfun, pars=f.nlpars, vars=f.nlvars)
+    nlps = pars
+    pars = map(nlps) do a
         k = findfirst(d -> d.dpar === a, f.dpars)
         lp, di = _build_linpred(a, f.dpars[k].rhs, vals, infos, N, T, fam, y, user, table, take; nlpar=true)
         push!(dinfo, di)
@@ -715,8 +817,8 @@ function _build_nlpred(f, vals, infos, N, T, fam, y, user, table, take, dinfo)
             "(e.g. `prior(\"normal(0, 5)\"; class=:b, nlpar=:$a)`), as in brms"))
         lp
     end
-    data = Tuple(T.(Float64.(vals[Atom(v)])) for v in f.nlvars)
-    return NLPred(:mu, f.nlfun, Tuple(pars), copy(f.nlpars), data)
+    data = Tuple(T.(Float64.(vals[Atom(v)])) for v in vars)
+    return NLPred(dp, fun, Tuple(pars), copy(nlps), data)
 end
 
 function _build_linpred(dp, rhs, vals, infos, N, T, fam, y, user, table, take; nlpar::Bool=false, shared=nothing,
@@ -731,13 +833,18 @@ function _build_linpred(dp, rhs, vals, infos, N, T, fam, y, user, table, take; n
     for spec in rhs.sm
         kind, covs, k, by, text = spec
         bs = length(spec) >= 6 ? spec[6] : :tp
-        Xcov = bs === :re ? [vals[a] for a in covs] : reduce(hcat, [Float64.(vals[a]) for a in covs])
+        Xcov = bs in (:re, :fs, :mrf) ? [vals[a] for a in covs] : reduce(hcat, [Float64.(vals[a]) for a in covs])
         lab = string(kind) * join(brms_rename.(getfield.(covs, :label)))
         # a numeric `by` multiplies an UNcentred smooth (mgcv applies no constraint then)
         numby = by !== nothing && !iscategorical(infos[by])
         t = kind === :t2 ? T2Smooth(Xcov; k, label=lab) :
             bs === :re ? res(Xcov, Union{Nothing,Vector{String}}[iscategorical(infos[a]) ?
                                  [_level_name(l) for l in infos[a].levels] : nothing for a in covs]; label=lab) :
+            bs === :fs ? _build_fs(covs, Xcov, infos, k, length(spec) >= 7 ? spec[7] : :tp, lab, by) :
+            bs === :cp ? cps(Xcov; k, label=lab, center=!numby) :
+            bs === :bs ? mbs(Xcov; k, label=lab, center=!numby) :
+            bs === :gp ? mgps(Xcov; k, label=lab, center=!numby) :
+            bs === :mrf ? mrfs(Xcov, [_level_name(l) for l in infos[covs[1]].levels], _eval_xt(spec[7]); label=lab, center=!numby) :
             bs === :cr ? crs(Xcov; k, label=lab, center=!numby) :
             bs === :cs ? crs(Xcov; k, label=lab, center=!numby, shrink=true) :
             bs === :ts ? tprs(Xcov; k, label=lab, center=!numby, shrink=true) :
@@ -831,9 +938,9 @@ function _build_linpred(dp, rhs, vals, infos, N, T, fam, y, user, table, take; n
     for gt in rhs.groups
         gi = _group_info(gt, vals, infos)
         idx = isempty(gt.mm) ? _group_index(gi, gt, vals) : ones(Int, N)
+        _check_mmc(gt)
         gspec = design_spec(gt.intercept, gt.terms, infos)
-        Zx = model_matrix(gspec, vals, infos, N)
-        Z = gt.intercept ? hcat(ones(N), Zx) : Zx
+        Z = _group_Z(gt, gspec, vals, infos, N, 1)
         gcoefs = vcat(gt.intercept ? ["Intercept"] : String[], brms_rename.(gspec.colnames))
         q = size(Z, 2)
         q > 0 || throw(ArgumentError("group term for $(group_label(gt)) has no effects"))
@@ -866,8 +973,10 @@ function _build_linpred(dp, rhs, vals, infos, N, T, fam, y, user, table, take; n
             end
             continue
         end
-        mmJ = zeros(Int, 0, 0); mmW = zeros(0, 0)
+        mmJ = zeros(Int, 0, 0); mmW = zeros(0, 0); mmZ = nothing
         if !isempty(gt.mm)
+            # mmc(x1, x2): member m's covariate value in its Z
+            mmZ = [T.(_group_Z(gt, gspec, vals, infos, N, m)) for m in 1:length(gt.mm)]
             # mm(g1, g2): level of each membership, and the weights
             M = length(gt.mm)
             mmJ = reduce(hcat, [[gi.index[l] for l in _group_values(GroupTerm(true, Vector{Atom}[], m, false), vals)]
@@ -909,7 +1018,7 @@ function _build_linpred(dp, rhs, vals, infos, N, T, fam, y, user, table, take; n
             Lcov = T.(Matrix(CA.L))
         end
         push!(groups, GroupBlock{T}(label, idx, gi.levels, T.(Z), gcoefs, sd_r, corr_r, z_r, sd_p, lk.eta;
-                                    mmJ=mmJ, mmW=mmW, df=dfi, udf=udf_r, df_prior=dfp, Lcov=Lcov))
+                                    mmJ=mmJ, mmW=mmW, mmZ=mmZ, df=dfi, udf=udf_r, df_prior=dfp, Lcov=Lcov))
         push!(ginfo, (gt, gi, gspec))
     end
     # monotonic effects: coefficient bsp (class b, coef "mo<x>"), simplex simo
@@ -968,10 +1077,14 @@ function _build_linpred(dp, rhs, vals, infos, N, T, fam, y, user, table, take; n
         W = Float64.(W .!= 0)
         nl = size(W, 1)
         lv = vals[ga]
-        J = all(v -> v isa Integer || (v isa Real && isinteger(v)), lv) && all(v -> 1 <= v <= nl, lv) ? Int.(lv) :
-            (u = sort(unique(string.(lv))); length(u) == nl ||
-                throw(ArgumentError("car(): $(nl) locations in W but $(length(u)) distinct values of gr"));
-             [findfirst(==(string(v)), u) for v in lv])
+        clev = String[]
+        J = if all(v -> v isa Integer || (v isa Real && isinteger(v)), lv) && all(v -> 1 <= v <= nl, lv)
+            Int.(lv)
+        else
+            clev = sort(unique(string.(lv)))
+            length(clev) == nl || throw(ArgumentError("car(): $(nl) locations in W but $(length(clev)) distinct values of gr"))
+            [findfirst(==(string(v)), clev) for v in lv]
+        end
         e1, e2 = _car_edges(W)
         nn = vec(sum(W; dims=2))
         any(iszero, nn) && throw(ArgumentError("car(): every location needs at least one neighbour"))
@@ -984,16 +1097,20 @@ function _build_linpred(dp, rhs, vals, infos, N, T, fam, y, user, table, take; n
         nsz_r = type === :bym2 ? take(nl) : (1:0)
         rp = type === :bym2 ? _resolve!(table, user, fam, y, :rhocar, dp) : type === :escar ? _resolve!(table, user, fam, y, :car, dp) : flat()
         rho_i = type in (:bym2, :escar) ? first(take(1)) : 0
-        push!(cars, CarTerm{T}(type, J, nl, e1, e2, nn, eig, scale, sd_i, z_r, nsz_r, rho_i, sdp, rp))
+        push!(cars, CarTerm{T}(type, J, nl, e1, e2, nn, eig, scale, sd_i, z_r, nsz_r, rho_i, sdp, rp, clev))
     end
     # imputed predictors mi(x) (linked to x's model by the multivariate build)
     mis = MiTerm{T}[]
-    for a in rhs.mi
+    for (j, a) in enumerate(rhs.mi)
         xv = Float64.(vals[a])
         lab = "mi" * brms_rename(a.label)
         bp, _, _ = _resolve_b!(table, user, fam, y, dp, lab)
         var = replace(brms_rename(a.label), "_" => "", "." => "")
-        push!(mis, MiTerm{T}(lab, var, T.(xv), findall(isnan, xv), Ref(1:0), first(take(1)), bp, var in mi_marg))
+        ia = rhs.miidx[j]
+        # mi(x, idx): the x values are set when the multivariate build links x's rows
+        idxv = ia === nothing ? Any[] : collect(Any, vals[ia])
+        push!(mis, MiTerm{T}(lab, var, T.(xv), findall(isnan, xv), Ref(1:0), first(take(1)), bp, var in mi_marg,
+                             Ref((-Inf, Inf)), idxv, Ref(Int[])))
     end
     # measurement-error terms me(x, sdx)
     mes = MeTerm{T}[]
@@ -1056,16 +1173,27 @@ function _build_linpred(dp, rhs, vals, infos, N, T, fam, y, user, table, take; n
     lacs = LatentAC{T}[]
     # (gaussian / student were already wrapped in TimeCov by build_model: the
     # structure is in their likelihood, so no latent term -- never both)
-    if rhs.ar !== nothing && rhs.ar[5] in (:arma_cov, :cosy) &&
+    if rhs.ar !== nothing && rhs.ar[5] in (:arma_cov, :cosy, :unstr) &&
        !(fam isa Union{TimeCov,Gaussian{IdentityLink},Student{IdentityLink}})
         dp === :mu || throw(ArgumentError("autocorrelation structures belong in the formula of mu"))
         tc = _timecov_family(Gaussian{IdentityLink}(), rhs.ar, vals, y, 1:N, N)
-        cls = collect(Symbol, _ac_dpars(tc))
         sdp = _resolve!(table, user, fam, y, :sderr, dp; lb=0.0)
-        rpri = [_resolve!(table, user, fam, y, c, dp) for c in cls]
-        sd_i = first(take(1)); rho_r = take(length(cls)); z_r = take(N)
-        lbs = [c === :cosy ? 0.0 : -1.0 for c in cls]; ubs = ones(length(cls))
-        push!(lacs, LatentAC{T}(tc, sd_i, rho_r, lbs, ubs, z_r, sdp, rpri, [_scalar_label(c) for c in cls]))
+        if tc.kind === :unstr
+            # brms: err per group = sderr chol(R[J, J]) zerr, R an LKJ correlation
+            # over the time levels (class cortime)
+            D = tc.nmax
+            lk = _resolve!(table, user, fam, y, :cortime, dp)
+            sd_i = first(take(1)); rho_r = take(D * (D - 1) ÷ 2); z_r = take(N)
+            tl = tc.tlabels
+            nms = ["cortime__$(tl[j])__$(tl[k])" for k in 2:D for j in 1:(k - 1)]
+            push!(lacs, LatentAC{T}(tc, sd_i, rho_r, Float64[], Float64[], z_r, sdp, ScalarPrior[], nms, lk.eta))
+        else
+            cls = collect(Symbol, _ac_dpars(tc))
+            rpri = [_resolve!(table, user, fam, y, c, dp) for c in cls]
+            sd_i = first(take(1)); rho_r = take(length(cls)); z_r = take(N)
+            lbs = [c === :cosy ? 0.0 : -1.0 for c in cls]; ubs = ones(length(cls))
+            push!(lacs, LatentAC{T}(tc, sd_i, rho_r, lbs, ubs, z_r, sdp, rpri, [_scalar_label(c) for c in cls], 1.0))
+        end
     end
     hs = HSTerm()
     if hsp !== nothing

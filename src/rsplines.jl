@@ -82,15 +82,27 @@ function _spline_row(sb::SplineBasis, x)
     return row[2:end]
 end
 
-function SplineBasis(x::AbstractVector{<:Real}, natural::Bool, df::Int, degree::Int)
+# knots / bknots as R's `knots =` / `Boundary.knots =`: given interior knots
+# override df (R ignores df then); the boundary knots default to range(x), and
+# the quantiles for df-derived knots are taken over x inside them (R's splines)
+function SplineBasis(x::AbstractVector{<:Real}, natural::Bool, df::Int, degree::Int;
+                     knots=nothing, bknots=nothing)
     xf = Float64.(x)
-    lo, hi = extrema(xf)
+    lo, hi = bknots === nothing ? extrema(xf) : (Float64(bknots[1]), Float64(bknots[2]))
+    lo < hi || throw(ArgumentError("$(natural ? "ns" : "bs")(): Boundary.knots must be increasing"))
     ord = natural ? 4 : degree + 1
-    nik = natural ? df - 1 : df - degree
-    nik >= 0 || throw(ArgumentError("$(natural ? "ns" : "bs")(): df = $df is too small" *
-                                    (natural ? "" : " for degree $degree")))
-    probs = range(0, 1; length=nik + 2)[2:(end - 1)]
-    inner = isempty(probs) ? Float64[] : quantile(xf, collect(probs))
+    if knots !== nothing
+        inner = sort(Float64.(collect(knots)))
+        all(k -> lo < k < hi, inner) ||
+            throw(ArgumentError("$(natural ? "ns" : "bs")(): interior knots must lie inside the boundary knots"))
+    else
+        nik = natural ? df - 1 : df - degree
+        nik >= 0 || throw(ArgumentError("$(natural ? "ns" : "bs")(): df = $df is too small" *
+                                        (natural ? "" : " for degree $degree")))
+        probs = range(0, 1; length=nik + 2)[2:(end - 1)]
+        xin = bknots === nothing ? xf : filter(v -> lo <= v <= hi, xf)
+        inner = isempty(probs) ? Float64[] : quantile(xin, collect(probs))
+    end
     knots = sort(vcat(fill(lo, ord), inner, fill(hi, ord)))
     Q = zeros(0, 0)
     if natural
@@ -108,13 +120,23 @@ end
 _basis_block(sb::SplineBasis, x) = _spline_block(sb, x)
 _basis_ncol(sb::SplineBasis) = sb.natural ? size(sb.Q, 2) - 2 : length(sb.knots) - sb.ord - 1
 
-# bs(x, df = 5) / bs(x, 5, degree = 2) / ns(x, df = 3) / ns(x, 3)
+# a literal numeric vector: 0.5, c(0.2, 0.7) or [0.2, 0.7]
+function _numvec(v)
+    v isa Expr && v.head == :call && v.args[1] === :c && return Float64[_numconst(a) for a in v.args[2:end]]
+    v isa Expr && v.head == :vect && return Float64[_numconst(a) for a in v.args]
+    return [_numconst(v)]
+end
+_is_bknots_kw(k) = k === :boundary_knots || k === Symbol("Boundary.knots") ||
+                   (k isa Expr && k.head == :. && k.args[1] === :Boundary && k.args[2] == QuoteNode(:knots))
+
+# bs(x, df = 5) / bs(x, 5, degree = 2) / ns(x, df = 3) / ns(x, 3), and R's
+# knots = c(...) / Boundary.knots = c(lo, hi)
 function _spline_args(ex)
     (ex isa Expr && ex.head == :call && ex.args[1] in (:bs, :ns)) || return nothing
     natural = ex.args[1] === :ns
-    df = nothing; degree = 3
+    df = nothing; degree = 3; knots = nothing; bknots = nothing
     pos = [a for a in ex.args[3:end] if !(a isa Expr && a.head == :kw)]
-    length(pos) <= 1 || throw(ArgumentError("$(ex.args[1])(): give df positionally or as `df = `; knots are not supported yet"))
+    length(pos) <= 1 || throw(ArgumentError("$(ex.args[1])(): give df positionally or as `df = `, interior knots as `knots = c(...)`"))
     isempty(pos) || (df = pos[1])
     for a in ex.args[3:end]
         a isa Expr && a.head == :kw || continue
@@ -122,11 +144,18 @@ function _spline_args(ex)
             df = a.args[2]
         elseif a.args[1] === :degree && !natural
             degree = a.args[2]
+        elseif a.args[1] === :knots
+            knots = _numvec(a.args[2])
+        elseif _is_bknots_kw(a.args[1])
+            bknots = _numvec(a.args[2])
+            length(bknots) == 2 || throw(ArgumentError("$(ex.args[1])(): Boundary.knots needs two values"))
         else
-            throw(ArgumentError("$(ex.args[1])(): unsupported argument `$(a.args[1])` (supported: df$(natural ? "" : ", degree"))"))
+            throw(ArgumentError("$(ex.args[1])(): unsupported argument `$(a.args[1])` (supported: df, knots, Boundary.knots$(natural ? "" : ", degree"))"))
         end
     end
-    df isa Integer || throw(ArgumentError("$(ex.args[1])() needs a literal integer df, e.g. $(ex.args[1])(x, df = 4)"))
+    knots === nothing && !(df isa Integer) &&
+        throw(ArgumentError("$(ex.args[1])() needs a literal integer df or knots = c(...), e.g. $(ex.args[1])(x, df = 4)"))
     degree isa Integer || throw(ArgumentError("bs(): degree must be a literal integer"))
-    return ex.args[2], natural, Int(df), Int(degree)
+    dfi = df isa Integer ? Int(df) : 0
+    return ex.args[2], natural, dfi, Int(degree), knots, bknots
 end

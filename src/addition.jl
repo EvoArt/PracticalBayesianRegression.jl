@@ -53,6 +53,55 @@ _mean(::GaussianSE, eta, t) = eta[1]
 _rand(rng, ::GaussianSE{L,false}, eta, t) where {L} = eta[1]     # no residual draw without sigma or s
 _rand(rng, ::GaussianSE{L,true}, eta, t) where {L} = eta[1] + exp(eta[2]) * randn(rng)
 
+# --- se() for the other families brms allows it for (student, skew_normal, and
+# gaussian with a non-identity link): the base family at the total scale
+# sqrt(se^2 + sigma^2) (sigma = TRUE) or se itself (sigma = FALSE), as brms's
+# Stan code. The scale differs per observation, so the base family's aux work
+# runs per observation (`_pre` keeps the raw aux etas).
+"""
+    SEFamily{F,S}
+
+`y | se(s)` for a family with a `sigma` dpar in second place: the family at
+log scale `log(sqrt(s^2 + sigma^2))` (`S = true`) or `log(s)` (`S = false`,
+no sigma parameter).
+"""
+struct SEFamily{F<:Family,S} <: Family
+    fam::F
+    se::Vector{Float64}
+end
+link(f::SEFamily) = link(f.fam)
+family_name(f::SEFamily) = family_name(f.fam)
+dpars(f::SEFamily{F,true}) where {F} = dpars(f.fam)
+dpars(f::SEFamily{F,false}) where {F} = (d = dpars(f.fam); (d[1], d[3:end]...))
+aux_bounds(f::SEFamily, d::Symbol) = aux_bounds(f.fam, d)
+dpar_link_name(f::SEFamily, d::Symbol) = dpar_link_name(f.fam, d)
+prior_link(f::SEFamily) = prior_link(f.fam)
+_check_response(f::SEFamily, y, t) = _check_response(f.fam, y, t)
+_ll_const(f::SEFamily, y, t) = _ll_const(f.fam, y, t)
+_xdata(f::SEFamily, y, trials) = [(f.se[i], _xone(f.fam, y[i], _tri(trials, i))) for i in eachindex(y)]
+@inline _pre(::SEFamily, eta) = Base.tail(eta)
+# the base family's eta tuple at this observation's total log scale
+@inline _se_eta(::SEFamily{F,true}, s, m, aux) where {F} =
+    (m, log(s * s + exp(2 * aux[1])) / 2, Base.tail(aux)...)
+@inline _se_eta(::SEFamily{F,false}, s, m, aux) where {F} = (m, log(s + zero(m)), aux...)
+@inline _ll(f::SEFamily, y, x, eta) = _ll(f.fam, y, x[2], _se_eta(f, x[1], eta[1], Base.tail(eta)))
+@inline function _ll_grad_pre(f::SEFamily{F,true}, y, x, m, aux) where {F}
+    s = x[1]
+    v, g = _ll_grad(f.fam, y, x[2], _se_eta(f, s, m, aux))
+    s2 = exp(2 * aux[1])
+    return v, (g[1], g[2] * s2 / (s * s + s2), Base.tail(Base.tail(g))...)
+end
+@inline function _ll_grad_pre(f::SEFamily{F,false}, y, x, m, aux) where {F}
+    v, g = _ll_grad(f.fam, y, x[2], _se_eta(f, x[1], m, aux))
+    return v, (g[1], Base.tail(Base.tail(g))...)
+end
+# predictions: the base family with sigma (or a degenerate sigma = 0 without it),
+# as GaussianSE
+_mean(f::SEFamily{F,true}, eta, t) where {F} = _mean(f.fam, eta, t)
+_mean(f::SEFamily{F,false}, eta, t) where {F} = _mean(f.fam, (eta[1], oftype(eta[1], -Inf), Base.tail(eta)...), t)
+_rand(rng, f::SEFamily{F,true}, eta, t) where {F} = _rand(rng, f.fam, eta, t)
+_rand(rng, f::SEFamily{F,false}, eta, t) where {F} = _mean(f, eta, t)
+
 # --- trunc(): truncated likelihood ------------------------------------------------
 
 """
@@ -117,24 +166,74 @@ end
 @inline _ll(c::Truncated, y, x, eta) = first(_ll_grad_pre(c, y, x, eta[1], _pre(c, eta)))
 
 # the raw value back from the stored x (log scale for lognormal/weibull)
-_cens_y(::Union{Gaussian,Exponential}, x) = x
+_cens_y(::Union{Gaussian,Exponential,_CONT_CENS}, x) = x
 _cens_y(::Union{Lognormal,Weibull}, x) = exp(x)
 # a count family truncated to [lb, ub] keeps lb itself (Stan's T[lb, ub] for
 # integers): the normaliser is P(lb - 1 < Y <= ub), so lb is stored as lb - 1
 _tlb(::Family, lb) = lb
 _tlb(::_DISC_CENS, lb) = lb - 1
 
-@inline _pre(c::Truncated{<:_DISC_CENS}, eta) = (Base.tail(eta), _pre(c.fam, eta))
-@inline function _ll_grad_pre(c::Truncated{<:_DISC_CENS}, y, x, m, p)
+@inline _pre(c::Truncated{<:_GEN_CENS}, eta) = (Base.tail(eta), _pre(c.fam, eta))
+@inline function _ll_grad_pre(c::Truncated{<:_GEN_CENS}, y, x, m, p)
     aux, pb = p
     code, xl, xu, xy = x
     v, g = _ll_grad_pre(c.fam, y, xy, m, pb)
-    t = _disc_t(c.fam, xy)
-    vn, gn = _dual_vg(e -> _disc_trunc_norm(c.fam, code, xl, xu, xy, e, t), (m, aux...))
+    vn, gn = _dual_vg(e -> _gen_trunc_norm(c.fam, code, xl, xu, xy, e), (m, aux...))
     return v - vn, map(-, g, gn)
 end
-@inline _ll(c::Truncated{<:_DISC_CENS}, y, x, eta) =
-    _ll(c.fam, y, x[4], eta) - _disc_trunc_norm(c.fam, x[1], x[2], x[3], x[4], eta, _disc_t(c.fam, x[4]))
+@inline _ll(c::Truncated{<:_GEN_CENS}, y, x, eta) =
+    _ll(c.fam, y, x[4], eta) - _gen_trunc_norm(c.fam, x[1], x[2], x[3], x[4], eta)
 _disc_trunc_norm(fam, code, xl, xu, xb, eta, t) =
     code == 2 ? _disc_lint(fam, xl, xu, xb, eta, t) :
     code == 1 ? _disc_lccdf(fam, xl, xb, eta, t) : _disc_lcdf(fam, xu, xb, eta, t)
+_gen_trunc_norm(fam::_DISC_CENS, code, xl, xu, xb, eta) = _disc_trunc_norm(fam, code, xl, xu, xb, eta, _disc_t(fam, xb))
+_gen_trunc_norm(fam::Union{_CONT_CENS,_CLOSED_CENS}, code, xl, xu, xb, eta) =
+    code == 2 ? _cc_lint(fam, xl, xu, eta) : code == 1 ? _cc_lccdf(fam, xl, eta) : _cc_lcdf(fam, xu, eta)
+
+# --- cens() and trunc() together: brms's censored term minus the truncation
+# normaliser, per observation. x = (cens code, y2, trunc code, lb, ub, base x);
+# lb is stored as lb - 1 for the count families (_tlb), raw values otherwise.
+# Censored observations and the normaliser take one dual-number pass each.
+struct CensTrunc{F<:Family} <: Family
+    fam::F
+    codes::Vector{Int}
+    y2::Vector{Float64}
+    lb::Vector{Float64}
+    ub::Vector{Float64}
+end
+link(c::CensTrunc) = link(c.fam)
+dpars(c::CensTrunc) = dpars(c.fam)
+aux_bounds(c::CensTrunc, d::Symbol) = aux_bounds(c.fam, d)
+dpar_link_name(c::CensTrunc, d::Symbol) = dpar_link_name(c.fam, d)
+prior_link(c::CensTrunc) = prior_link(c.fam)
+mu_link(c::CensTrunc) = mu_link(c.fam)
+uses_trials(c::CensTrunc) = uses_trials(c.fam)
+family_name(c::CensTrunc) = family_name(c.fam)
+_check_response(c::CensTrunc, y, t) = _check_response(Truncated(c.fam, c.lb, c.ub), y, t)
+_ll_const(c::CensTrunc, y, t) = _ll_const(c.fam, y, t)
+_ll_const_obs(c::CensTrunc, y, t, x) = x[1] == 0 ? _ll_const(c.fam, y, t) : 0.0
+_mean(c::CensTrunc, eta, t) = _mean(c.fam, eta, t)
+_rand(rng, c::CensTrunc, eta, t) = _rand(rng, Truncated(c.fam, c.lb, c.ub), eta, t)
+function _xdata(c::CensTrunc, y, trials)
+    return map(eachindex(y)) do i
+        lb, ub = c.lb[i], c.ub[i]
+        tcode = isfinite(lb) && isfinite(ub) ? 2.0 : isfinite(lb) ? 1.0 : -1.0
+        (Float64(c.codes[i]), c.codes[i] == 2 ? Float64(c.y2[i]) : 0.0, tcode,
+         isfinite(lb) ? Float64(_tlb(c.fam, lb)) : 0.0, isfinite(ub) ? Float64(ub) : 0.0,
+         _xone(c.fam, y[i], _tri(trials, i)))
+    end
+end
+@inline _pre(c::CensTrunc, eta) = (Base.tail(eta), _pre(c.fam, eta))
+@inline function _ll_grad_pre(c::CensTrunc, y, x, m, p)
+    aux, pb = p
+    code, y2, tc, lo, hi, xb = x
+    v, g = code == 0 ? _ll_grad_pre(c.fam, y, xb, m, pb) :
+           _dual_vg(e -> _gen_cens_val(c.fam, code, y, y2, xb, e), (m, aux...))
+    vn, gn = _dual_vg(e -> _gen_trunc_norm(c.fam, tc, lo, hi, xb, e), (m, aux...))
+    return v - vn, map(-, g, gn)
+end
+@inline function _ll(c::CensTrunc, y, x, eta)
+    code, y2, tc, lo, hi, xb = x
+    v = code == 0 ? _ll(c.fam, y, xb, eta) : _gen_cens_val(c.fam, code, y, y2, xb, eta)
+    return v - _gen_trunc_norm(c.fam, tc, lo, hi, xb, eta)
+end

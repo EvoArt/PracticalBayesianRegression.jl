@@ -92,6 +92,52 @@
         (negbinomial2(), (log(2.5), log(0.7)), 4.0, 0,
             e -> D.logpdf(D.NegativeBinomial(exp(-e[2]), exp(-e[2]) / (exp(-e[2]) + exp(e[1]))), 4)),
     ])
+    # brms 2.23's further links for the families that had only their default
+    sp(x) = log1p(exp(x)); sq(x) = (x + sqrt(x^2 + 4)) / 2
+    exg(mu, s, b, y) = (m = mu - b; l = 1 / b; log(l / 2) + l / 2 * (2m + l * s^2 - 2y) +
+                        log(PG.erfc((m + l * s^2 - y) / (sqrt(2) * s))))
+    append!(cases, Any[
+        (geometric(; link=:softplus), (0.4,), 3.0, 0, e -> D.logpdf(D.Geometric(1 / (1 + sp(e[1]))), 3)),
+        (geometric(; link=:identity), (1.7,), 0.0, 0, e -> D.logpdf(D.Geometric(1 / (1 + e[1])), 0)),
+        (weibull(; link=:identity), (1.6, log(1.8)), 1.3, 0,
+            e -> D.logpdf(D.Weibull(exp(e[2]), e[1] / PG.SpecialFunctions.gamma(1 + 1 / exp(e[2]))), 1.3)),
+        (weibull(; link=:inverse), (0.7, log(0.9)), 0.6, 0,
+            e -> D.logpdf(D.Weibull(exp(e[2]), (1 / e[1]) / PG.SpecialFunctions.gamma(1 + 1 / exp(e[2]))), 0.6)),
+        (exponential(; link=:softplus), (0.5,), 1.3, 0, e -> D.logpdf(D.Exponential(sp(e[1])), 1.3)),
+        (exponential(; link=:identity), (2.1,), 1.3, 0, e -> D.logpdf(D.Exponential(e[1]), 1.3)),
+        (zero_inflated_poisson(; link=:identity), (2.2, -0.5), 0.0, 0, e -> zinf(D.Poisson(e[1]), σ(e[2]), 0)),
+        (zero_inflated_poisson(; link=:sqrt), (1.4, -0.5), 3.0, 0, e -> zinf(D.Poisson(e[1]^2), σ(e[2]), 3)),
+        (zero_inflated_negbinomial(; link=:squareplus), (0.8, log(2.0), -0.5), 0.0, 0,
+            e -> zinf(nbd(sq(e[1]), exp(e[2])), σ(e[3]), 0)),
+        (zero_inflated_negbinomial(; link=:softplus), (0.8, log(2.0), -0.5), 5.0, 0,
+            e -> zinf(nbd(sp(e[1]), exp(e[2])), σ(e[3]), 5)),
+        (zero_inflated_binomial(; link=:probit), (-0.3, 0.2), 0.0, 8, e -> zinf(D.Binomial(8, Φ(e[1])), σ(e[2]), 0)),
+        (zero_inflated_binomial(; link=:cloglog), (-0.3, 0.2), 3.0, 8, e -> zinf(D.Binomial(8, clog(e[1])), σ(e[2]), 3)),
+        (hurdle_poisson(; link=:sqrt), (1.3, -0.5), 3.0, 0, e -> hurdle(D.Poisson(e[1]^2), σ(e[2]), 3)),
+        (hurdle_poisson(; link=:identity), (1.3, -0.5), 0.0, 0, e -> hurdle(D.Poisson(e[1]), σ(e[2]), 0)),
+        (hurdle_negbinomial(; link=:softplus), (0.8, log(2.0), -0.5), 4.0, 0,
+            e -> hurdle(nbd(sp(e[1]), exp(e[2])), σ(e[3]), 4)),
+        (hurdle_gamma(; link=:identity), (1.5, log(3.0), 0.3), 1.4, 0,
+            e -> log1p(-σ(e[3])) + D.logpdf(D.Gamma(exp(e[2]), e[1] / exp(e[2])), 1.4)),
+        (hurdle_lognormal(; link=:inverse), (2.0, log(0.6), 0.3), 1.4, 0,
+            e -> log1p(-σ(e[3])) + D.logpdf(D.LogNormal(1 / e[1], exp(e[2])), 1.4)),
+        (skew_normal(; link=:log), (0.4, log(1.3), 2.0), 1.1, 0, e -> D.logpdf(sn([exp(e[1]), e[2], e[3]]), 1.1)),
+        (exgaussian(; link=:softplus), (0.4, log(0.5), log(0.8)), 1.1, 0, e -> exg(sp(e[1]), exp(e[2]), exp(e[3]), 1.1)),
+        (exgaussian(), (0.4, log(0.5), log(0.8)), 1.1, 0, e -> exg(e[1], exp(e[2]), exp(e[3]), 1.1)),
+        (frechet(; link=:identity), (1.6, log(2.5)), 1.7, 0,
+            e -> D.logpdf(D.Frechet(1 + exp(e[2]), e[1] / PG.SpecialFunctions.gamma(1 - 1 / (1 + exp(e[2])))), 1.7)),
+        (PG.ShiftedLognormal{PG.InverseLink}(0.8), (2.0, log(0.5), -0.3), 1.9, 0,
+            e -> D.logpdf(D.LogNormal(1 / e[1], exp(e[2])), 1.9 - 0.8 / (1 + exp(-e[3])))),
+        (discrete_weibull(; link=:probit), (0.9, log(1.3)), 3.0, 0,
+            e -> log(Φ(e[1])^(3.0^exp(e[2])) - Φ(e[1])^(4.0^exp(e[2])))),
+        (discrete_weibull(; link=:identity), (0.7, log(1.3)), 0.0, 0,
+            e -> log(1 - e[1]^(1.0^exp(e[2])))),
+        (zero_inflated_asym_laplace(), (0.3, log(1.4), 0.6, -0.8), 0.0, 0, e -> log(σ(e[4]))),
+        (zero_inflated_asym_laplace(; link=:softplus), (0.3, log(1.4), 0.6, -0.8), 1.2, 0,
+            e -> log1p(-σ(e[4])) + al([sp(e[1]), e[2], e[3]], 1.2)),
+        (com_poisson(; link=:softplus), (0.9, log(0.7)), 3.0, 0,
+            e -> PG._ll(com_poisson(), 3.0, 0.0, (log(sp(e[1])), e[2]))),
+    ])
     for (fam, eta, y, t, ref) in cases
         xv = PG._xdata(fam, [y], [t])
         x = isempty(xv) ? 0.0 : xv[1]
@@ -107,6 +153,159 @@
             # and against the reference itself
             @test collect(g) ≈ ForwardDiff.gradient(ref, collect(eta)) atol = 1e-7
         end
+    end
+    @testset "continuous log-cdfs (cens / trunc)" begin
+        # Simpson's rule on [lo, y] of a log density (reference where Distributions has no cdf)
+        function simpson(lf, lo, y; n=40_000)
+            h = (y - lo) / n
+            s = exp(lf(lo)) + exp(lf(y))
+            for k in 1:(n - 1)
+                s += (isodd(k) ? 4 : 2) * exp(lf(lo + k * h))
+            end
+            return s * h / 3
+        end
+        snd(e) = (d = e[3] / sqrt(1 + e[3]^2); om = exp(e[2]) / sqrt(1 - 2 / π * d^2);
+                  (e[1] - om * d * sqrt(2 / π), om))
+        ccases = Any[
+            (student(), (0.3, log(1.4), log(3.0)), 1.9, D.cdf(0.3 + 1.4 * D.TDist(4.0), 1.9)),
+            (student(), (0.3, log(1.4), log(3.0)), -2.5, D.cdf(0.3 + 1.4 * D.TDist(4.0), -2.5)),
+            (skew_normal(), (0.4, log(1.3), 2.0), 0.9,
+                (xo = snd([0.4, log(1.3), 2.0]); simpson(v -> PG._ll(skew_normal(), v, 0.0, (0.4, log(1.3), 2.0)), xo[1] - 30xo[2], 0.9))),
+            (skew_normal(), (0.4, log(1.3), -3.5), 1.6,
+                (xo = snd([0.4, log(1.3), -3.5]); simpson(v -> PG._ll(skew_normal(), v, 0.0, (0.4, log(1.3), -3.5)), xo[1] - 30xo[2], 1.6))),
+            (PG.ShiftedLognormal{PG.IdentityLink}(0.8), (0.1, log(0.5), -0.3), 1.9,
+                D.cdf(D.LogNormal(0.1, 0.5), 1.9 - 0.8 / (1 + exp(0.3)))),
+            (exgaussian(), (0.4, log(0.5), log(0.8)), 1.1,
+                simpson(v -> PG._ll(exgaussian(), v, 0.0, (0.4, log(0.5), log(0.8))), -15.0, 1.1)),
+            (inverse_gaussian(; link=:log), (0.3, log(2.0)), 1.6, D.cdf(D.InverseGaussian(exp(0.3), 2.0), 1.6)),
+            (gammafamily(), (0.5, log(3.0)), 1.4, D.cdf(D.Gamma(3.0, exp(0.5) / 3.0), 1.4)),
+            (gammafamily(; link=:softplus), (0.5, log(0.7)), 0.3, D.cdf(D.Gamma(0.7, sp(0.5) / 0.7), 0.3)),
+            (frechet(), (0.5, log(2.5)), 1.7,
+                D.cdf(D.Frechet(3.5, exp(0.5) / PG.SpecialFunctions.gamma(1 - 1 / 3.5)), 1.7)),
+            (asym_laplace(), (0.3, log(1.4), 0.6), 1.2,
+                (simpson(v -> PG._ll(asym_laplace(), v, 0.0, (0.3, log(1.4), 0.6)), -150.0, 0.3) + simpson(v -> PG._ll(asym_laplace(), v, 0.0, (0.3, log(1.4), 0.6)), 0.3, 1.2))),
+            (asym_laplace(), (0.3, log(1.4), -1.1), -2.0,
+                simpson(v -> PG._ll(asym_laplace(), v, 0.0, (0.3, log(1.4), -1.1)), -150.0, -2.0)),
+            (betafamily(), (0.4, log(6.0)), 0.3, D.cdf(D.Beta(σ(0.4) * 6, (1 - σ(0.4)) * 6), 0.3)),
+            (hurdle_gamma(), (0.5, log(3.0), 0.3), 1.4, σ(0.3) + (1 - σ(0.3)) * D.cdf(D.Gamma(3.0, exp(0.5) / 3.0), 1.4)),
+            (hurdle_lognormal(), (0.2, log(0.6), 0.3), 1.4, σ(0.3) + (1 - σ(0.3)) * D.cdf(D.LogNormal(0.2, 0.6), 1.4)),
+            (zero_inflated_beta(), (0.2, log(4.0), -0.7), 0.35,
+                σ(-0.7) + (1 - σ(-0.7)) * D.cdf(D.Beta(σ(0.2) * 4, (1 - σ(0.2)) * 4), 0.35)),
+            (zero_inflated_asym_laplace(), (0.3, log(1.4), 0.6, -0.8), 1.2,
+                σ(-0.8) + (1 - σ(-0.8)) * (simpson(v -> PG._ll(asym_laplace(), v, 0.0, (0.3, log(1.4), 0.6)), -150.0, 0.3) + simpson(v -> PG._ll(asym_laplace(), v, 0.0, (0.3, log(1.4), 0.6)), 0.3, 1.2))),
+            (zero_inflated_asym_laplace(), (0.3, log(1.4), 0.6, -0.8), -1.2,
+                (1 - σ(-0.8)) * simpson(v -> PG._ll(asym_laplace(), v, 0.0, (0.3, log(1.4), 0.6)), -150.0, -1.2)),
+            (gaussian(; link=:log), (0.3, log(1.7)), 1.1, D.cdf(D.Normal(exp(0.3), 1.7), 1.1)),
+            (von_mises(), (0.4, log(2.5)), 1.1, simpson(v -> PG._ll(von_mises(), v, 0.0, (0.4, log(2.5))), -π, 1.1)),
+            (von_mises(; link=:identity), (2.8, log(3.0)), -2.9,
+                simpson(v -> PG._ll(von_mises(; link=:identity), v, 0.0, (2.8, log(3.0))), -π, -2.9)),
+            (von_mises(; link=:identity), (-0.5, log(20.0)), -0.3,
+                simpson(v -> PG._ll(von_mises(; link=:identity), v, 0.0, (-0.5, log(20.0))), -π, -0.3)),
+            (weibull(; link=:softplus), (0.5, log(1.8)), 1.3,
+                D.cdf(D.Weibull(1.8, sp(0.5) / PG.SpecialFunctions.gamma(1 + 1 / 1.8)), 1.3)),
+        ]
+        for (fam, eta, y, F) in ccases
+            @testset "$(PG.family_name(fam)) y=$y" begin
+                @test exp(PG._cc_lcdf(fam, y, eta)) ≈ F rtol = 1e-7
+                @test exp(PG._cc_lccdf(fam, y, eta)) ≈ 1 - F rtol = 1e-7
+                # dual-number derivatives against central differences
+                for f in (PG._cc_lcdf, PG._cc_lccdf)
+                    g = ForwardDiff.gradient(e -> f(fam, y, Tuple(e)), collect(eta))
+                    fd = map(eachindex(eta)) do k
+                        h = 1e-6; ep = collect(eta); em = collect(eta); ep[k] += h; em[k] -= h
+                        (f(fam, y, Tuple(ep)) - f(fam, y, Tuple(em))) / 2h
+                    end
+                    @test g ≈ fd rtol = 1e-5 atol = 1e-7
+                end
+            end
+        end
+        # skew_normal far in its thin tail (where Phi(z) - 2T(z, alpha) cancels): against
+        # a 256-bit Simpson integration of the density
+        let fsn = skew_normal(), e = (0.0, 0.0, 4.0)
+            xi, om, _ = PG._sn_params(big(e[1]), big(e[2]), big(e[3]))
+            for yv in (-1.5, -2.5)
+                zb = (big(yv) - xi) / om
+                g(t) = 2 * exp(-t^2 / 2) / sqrt(2 * big(pi)) * PG.SpecialFunctions.erfc(-big(4) * t / sqrt(big(2))) / 2
+                n = 20_000; lo = zb - 12; hh = (zb - lo) / n
+                Fb = (g(lo) + g(zb) + sum((isodd(k) ? 4 : 2) * g(lo + k * hh) for k in 1:(n - 1))) * hh / 3
+                @test PG._cc_lcdf(fsn, yv, e) ≈ Float64(log(Fb)) rtol = 1e-10
+                @test PG._cc_lccdf(fsn, -yv, (0.0, 0.0, -4.0)) ≈ PG._cc_lcdf(fsn, yv, e) rtol = 1e-10   # reflection
+            end
+        end
+        # von_mises above kappa = 50: Stan's normal approximation (close, not exact)
+        fvm = von_mises(; link=:identity)
+        Fvm = simpson(v -> PG._ll(fvm, v, 0.0, (0.3, log(80.0))), -π, 0.35)
+        @test exp(PG._cc_lcdf(fvm, 0.35, (0.3, log(80.0)))) ≈ Fvm atol = 2e-3
+        # Owen's T: T(h, 0) = 0, T(0, a) = atan(a) / 2pi, both branches agree at a = 1
+        @test PG._owens_t(0.7, 0.0) == 0
+        @test PG._owens_t(0.0, 3.0) ≈ atan(3.0) / 2π rtol = 1e-12
+        @test PG._owens_t(1.3, 1.0 + 1e-12) ≈ PG._owens_t(1.3, 1.0) rtol = 1e-9
+    end
+    @testset "brms's d/p/q/r distribution functions" begin
+        fd(F, x) = (F(x + 1e-6) - F(x - 1e-6)) / 2e-6
+        for (d, p, q, args) in ((dstudent_t, pstudent_t, qstudent_t, (4.0, 0.5, 1.3)),
+                                (dskew_normal, pskew_normal, qskew_normal, (0.5, 1.3, 3.0)),
+                                (dfrechet, pfrechet, qfrechet, (0.2, 1.1, 2.5)),
+                                (dgen_extreme_value, pgen_extreme_value, qgen_extreme_value, (0.3, 1.2, 0.1)),
+                                (dshifted_lnorm, pshifted_lnorm, qshifted_lnorm, (0.1, 0.6, 0.4)),
+                                (dasym_laplace, pasym_laplace, qasym_laplace, (0.3, 1.4, 0.7)))
+            for u in (0.1, 0.5, 0.93)
+                x = q(u, args...)
+                @test p(x, args...) ≈ u rtol = 1e-8                       # quantile inverts the cdf
+                @test fd(v -> p(v, args...), x) ≈ d(x, args...) rtol = 1e-5   # cdf' = density
+                @test p(x, args...; lower_tail=false, log_p=true) ≈ log1p(-u) rtol = 1e-7
+                @test d(x, args...; log=true) ≈ log(d(x, args...))
+            end
+        end
+        for (d, p, args) in ((dexgaussian, pexgaussian, (1.0, 0.5, 0.8)), (dinv_gaussian, pinv_gaussian, (1.2, 2.0)),
+                             (dvon_mises, pvon_mises, (0.4, 2.5)))
+            for x in (0.3, 0.9, 1.7)
+                @test fd(v -> p(v, args...), x) ≈ d(x, args...) rtol = 1e-5
+            end
+        end
+        # discrete: normalised, and the cdf is the running sum
+        for (d, p, args) in ((dzero_inflated_poisson, pzero_inflated_poisson, (2.5, 0.3)),
+                             (dzero_inflated_negbinomial, pzero_inflated_negbinomial, (2.5, 1.5, 0.3)),
+                             (dzero_inflated_binomial, pzero_inflated_binomial, (10, 0.3, 0.2)),
+                             (dzero_inflated_beta_binomial, pzero_inflated_beta_binomial, (10, 0.3, 4.0, 0.2)),
+                             (dhurdle_poisson, phurdle_poisson, (2.5, 0.3)),
+                             (dhurdle_negbinomial, phurdle_negbinomial, (2.5, 1.5, 0.3)),
+                             (dbeta_binomial, pbeta_binomial, (10, 0.3, 4.0)))
+            @test sum(d(k, args...) for k in 0:400) ≈ 1 atol = 1e-10
+            @test p(3, args...) ≈ sum(d(k, args...) for k in 0:3) rtol = 1e-10
+        end
+        @test dhurdle_gamma(0, 2.0, 1.5, 0.3) ≈ 0.3 && phurdle_gamma(1e6, 2.0, 1.5, 0.3) ≈ 1
+        @test phurdle_lognormal(1.0, 0.0, 1.0, 0.3) ≈ 0.3 + 0.7 * 0.5
+        # wiener: both boundaries together integrate to one
+        tt = range(0.3001, 12.0; length=40_000); h = step(tt)
+        mass = sum(dwiener(t, 1.5, 0.3, 0.4, 0.7; resp=1) + dwiener(t, 1.5, 0.3, 0.4, 0.7; resp=0) for t in tt) * h
+        @test mass ≈ 1 atol = 2e-3
+        @test dlogistic_normal([0.2, 0.3, 0.5], [0.1, 0.4], [1.0 0.3; 0.3 1.0]) > 0
+        @test sum(rlogistic_normal([0.1, 0.4], [1.0 0.3; 0.3 1.0])) ≈ 1
+        @test 0 < rasym_laplace(0.0, 1.0, 0.3) + 100 && rwiener(1.5, 0.3, 0.4, 0.7).resp in (0, 1)
+    end
+    @testset "cox trunc(): normalised by the cumulative hazard at the bounds" begin
+        fct = PG.Cox{PG.LogLink}([0.0], [0.5], [3.0])
+        mu = exp(0.3)
+        for (tc, hb, ref) in ((2.0, (0.7, 0.9, 0.2, 1.6), log(exp(-0.2mu) - exp(-1.6mu))),
+                              (1.0, (0.7, 0.9, 0.2, 0.0), -0.2mu), (-1.0, (0.7, 0.9, 0.0, 1.6), log1p(-exp(-1.6mu))))
+            v, _ = PG._ll_grad_pre(fct, 1.0, (0.0, tc), 0.3, hb)
+            @test v ≈ log(0.7) + 0.3 - 0.9mu - ref rtol = 1e-12
+        end
+    end
+    @testset "dirichlet_multinomial and dirichlet2 vs Distributions" begin
+        fdm = PG._with_matrix(dirichlet_multinomial(), ["a", "b", "c"], [2.0 3.0 5.0])
+        eta = (0.3, -0.4, log(4.0))
+        x = PG._xdata(fdm, [10.0], Int[])[1]
+        e = exp.([0.0, 0.3, -0.4]); p = e ./ sum(e)
+        ref = D.logpdf(D.DirichletMultinomial(10, 4.0 .* p), [2, 3, 5])
+        @test PG._ll(fdm, 10.0, x, eta) + PG._ll_const_obs(fdm, 10.0, 0, x) ≈ ref atol = 1e-10
+        _, g = PG._ll_grad(fdm, 10.0, x, eta)
+        @test collect(g) ≈ ForwardDiff.gradient(t -> PG._ll(fdm, 10.0, x, Tuple(t)), collect(eta)) atol = 1e-10
+        fd2 = PG._with_matrix(dirichlet2(), ["a", "b", "c"], [0.2 0.3 0.5])
+        eta2 = (0.3, -0.4, 0.9)
+        x2 = PG._xdata(fd2, [1.0], Int[])[1]
+        @test PG._ll(fd2, 1.0, x2, eta2) ≈ D.logpdf(D.Dirichlet(exp.(collect(eta2))), [0.2, 0.3, 0.5]) atol = 1e-10
     end
     @testset "com_poisson and hurdle_cumulative" begin
         fc = com_poisson()
