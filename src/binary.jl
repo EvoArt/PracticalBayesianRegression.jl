@@ -24,6 +24,7 @@
 struct BinaryOptions
     data::String
     output::String
+    unconstrained::String            # "" = not written
     chains::Int
     iter::Int
     warmup::Int
@@ -44,7 +45,9 @@ Fits the model this executable was built for to the data in FILE.csv (one
 row per observation, a header row naming the columns).
 
   --data FILE         input CSV (required)
-  --output FILE       draws CSV to write (default: draws.csv)
+  --output FILE       draws CSV to write (default: draws.csv); the sampler
+                      statistics (lp__, divergent__, ...) come first
+  --unconstrained FILE  also write the draws on the unconstrained scale
   --chains N          number of chains (default 4)
   --iter N            iterations per chain, warm-up included (default 2000)
   --warmup N          warm-up iterations (default iter / 2)
@@ -76,7 +79,7 @@ end
 # A plain index loop: closures capturing the reassigned `i` / `v` were boxed
 # (Core.Box, i.e. Any), which juliac --trim cannot compile.
 function _parse_binary_args(args::Vector{String})
-    data = ""; output = "draws.csv"; chains = 4; iter = 2000; warmup = -1; seed = -1
+    data = ""; output = "draws.csv"; uncon = ""; chains = 4; iter = 2000; warmup = -1; seed = -1
     delta = 0.8; max_depth = 10; metric = :diag; init = 2.0; threads = true; summ = true; help = false
     n = length(args)
     i = 1
@@ -92,7 +95,7 @@ function _parse_binary_args(args::Vector{String})
             hasv = true
         end
         if k == "--columns"
-            return BinaryOptions("", "", 0, 0, 0, 0, 0.0, 0, :diag, 0.0, false, false, false), true
+            return BinaryOptions("", "", "", 0, 0, 0, 0, 0.0, 0, :diag, 0.0, false, false, false), true
         elseif k == "--help" || k == "-h"
             help = true
         elseif k == "--no-threads"
@@ -109,6 +112,8 @@ function _parse_binary_args(args::Vector{String})
                 data = v
             elseif k == "--output"
                 output = v
+            elseif k == "--unconstrained"
+                uncon = v
             elseif k == "--chains"
                 chains = _parse_opt_int(k, v)
             elseif k == "--iter"
@@ -139,18 +144,24 @@ function _parse_binary_args(args::Vector{String})
         0 <= warmup < iter || throw(ArgumentError("--warmup must be in 0:(iter - 1)"))
         seed < 0 && (seed = Int(rand(Random.RandomDevice(), UInt32)))
     end
-    return BinaryOptions(data, output, chains, iter, warmup, seed, delta, max_depth, metric, init, threads,
+    return BinaryOptions(data, output, uncon, chains, iter, warmup, seed, delta, max_depth, metric, init, threads,
                          summ, help), false
 end
 
 # ------------------------------------------------------- run time: sampling
 
+# nuts_chain's per-draw statistics, in the order CmdStan writes them
+const _STAT_NAMES = ("lp__", "accept_stat__", "stepsize__", "treedepth__", "n_leapfrog__", "divergent__",
+                     "energy__")
+
 # _sample_core's :nuts path, without the AdvancedHMC branch the binary must
 # not reach: the same rng per chain, initial values and nuts_chain call, so
-# the draws equal brm(...; seed) exactly
+# the draws equal brm(...; seed) exactly. `stats`: iterations x chains x
+# _STAT_NAMES.
 function _binary_sample(ld::GLMDensity, o::BinaryOptions)
     nkeep = o.iter - o.warmup
     draws = Array{Float64,3}(undef, ld.dim, nkeep, o.chains)
+    stats = Array{Float64,3}(undef, nkeep, o.chains, length(_STAT_NAMES))
     ndiv = zeros(Int, o.chains)
     times = zeros(o.chains)
     run = c -> begin
@@ -162,6 +173,9 @@ function _binary_sample(ld::GLMDensity, o::BinaryOptions)
         dr, st = nuts_chain(gradf!, θ0, nkeep, o.warmup; delta=o.delta, max_depth=o.max_depth, thin=1,
                             metric=o.metric, rng=rng)
         draws[:, :, c] .= dr
+        for k in 1:length(_STAT_NAMES)
+            stats[:, c, k] .= st[_STAT_NAMES[k]]
+        end
         ndiv[c] = round(Int, sum(st["divergent__"]))
         times[c] = time() - t0
         nothing
@@ -183,7 +197,7 @@ function _binary_sample(ld::GLMDensity, o::BinaryOptions)
             _ChainRun(run, c)()
         end
     end
-    return draws, ndiv, times
+    return draws, ndiv, times, stats
 end
 
 # A chain as a task body. Julia 1.12's juliac --trim does not follow task
@@ -550,13 +564,23 @@ function binary_main(args::Vector{String}, rec::ModelRecipe, eval_atoms::F, colu
         o.threads && o.chains > 1 && Threads.nthreads() == 1 &&
             println(out, "note: one thread, so chains run one after another; ",
                     "start with JULIA_NUM_THREADS=$(o.chains) to run them in parallel")
-        draws, ndiv, times = _binary_sample(ld, o)
+        draws, ndiv, times, stats = _binary_sample(ld, o)
         D = _binary_constrain(ld, draws)
+        statnames = String[s for s in _STAT_NAMES]
         io = open(o.output, "w")
         try
-            write_draws_csv(io, names, D)
+            write_draws_csv(io, names, D, statnames, stats)
         finally
             close(io)
+        end
+        if o.unconstrained != ""
+            # what a caller needs to rebuild a full fit (brm(::CompiledModel, data))
+            io = open(o.unconstrained, "w")
+            try
+                write_draws_csv(io, String["theta[$k]" for k in 1:ld.dim], permutedims(draws, (2, 3, 1)))
+            finally
+                close(io)
+            end
         end
         println(out, "chain times (s): ", join([_fmt(t) for t in times], ", "))
         sum(ndiv) > 0 && println(out, "warning: $(sum(ndiv)) divergent transitions after warm-up; ",

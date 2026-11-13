@@ -14,3 +14,18 @@ assemble
 read_csv
 DataTable
 ```
+
+## Model store
+
+```@docs
+compile_model
+compiled_models
+compiled_model
+find_compiled_model
+remove_compiled_model
+model_store
+CompiledModel
+ModelStore
+run_compiled
+fit_from_draws
+```
