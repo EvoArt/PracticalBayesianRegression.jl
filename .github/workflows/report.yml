@@ -35,7 +35,11 @@ jobs:
           tinytex: true
 
       - name: LaTeX packages
-        run: tlmgr install pgf booktabs lm geometry latexmk
+        run: |
+          # TinyTeX is installed but its bin folder is not on PATH
+          TT=$(dirname "$(find "$HOME" -name tlmgr -path '*TinyTeX*bin*' | head -1)")
+          echo "$TT" >> "$GITHUB_PATH"
+          "$TT/tlmgr" install pgf booktabs lm geometry latexmk
 
       - name: Julia environment
         run: julia --project=report-env -e 'using Pkg; Pkg.develop(PackageSpec(path=pwd()))'
