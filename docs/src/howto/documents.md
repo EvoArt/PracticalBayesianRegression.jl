@@ -141,7 +141,7 @@ fertilised plants were \coef{treatmentfertilised}{est} cm taller
 (Table~\ref{tab:summary}, Figure~\ref{fig:effects}). The chains converged
 (largest $\hat{R}$ \maxrhat).
 
-\begin{table}[ht]\centering
+\begin{table}[ht]\centering\small
   \caption{Posterior summary.}\label{tab:summary}
   \input{summary.tex}
 \end{table}
@@ -162,6 +162,8 @@ Compile it with `latexmk -pdf report.tex` (or `pdflatex` twice, for the
 references) in `report/`. A figure is drawn at its size in the plotting
 function (600 × 450 pixels is 450 × 338 pt); to fit it to the text width,
 scaling its text with it, wrap it: `\resizebox{\linewidth}{!}{\input{effects.tex}}`.
+The summary table, with its eight columns, is a little wide for 11pt text;
+`\small` in its `table` makes it fit.
 
 ## Other formats
 

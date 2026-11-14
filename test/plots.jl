@@ -92,9 +92,13 @@
     @test count("```{=", md) == 3
     @test_throws ArgumentError embed(1)
     st = summary_table(fit; format=:embed)
-    @test st.latex == summary_table(fit; format=:latex) && st.typst == summary_table(fit; format=:typst) &&
-          st.html == summary_table(fit; format=:html)
-    @test prior_table(fit; format=:embed).typst == prior_table(fit; format=:typst)
+    # the tables of each format, the HTML one kept out of Quarto's table parsing (which
+    # would put it in the PDFs too) and the PDF ones shrunk to the text width if wider
+    @test occursin(chomp(summary_table(fit; format=:latex)), st.latex) && occursin(raw"\resizebox", st.latex)
+    @test occursin(chomp(summary_table(fit; format=:typst)), st.typst) && startswith(st.typst, "#layout(")
+    @test st.html == replace(summary_table(fit; format=:html), "<table" => "<table data-quarto-disable-processing=\"true\""; count=1)
+    @test occursin("data-quarto-disable-processing", st.html)
+    @test occursin(chomp(prior_table(fit; format=:typst)), prior_table(fit; format=:embed).typst)
     # a fence longer than any backtick run inside
     @test occursin("````{=html}\nx```y\n````", sprint(show, MIME"text/markdown"(), Embedded("x```y", "", "")))
 end

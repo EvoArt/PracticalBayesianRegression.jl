@@ -77,7 +77,8 @@ columns `Estimate`, `Est.Error`, the central `prob` interval and, with
 `:typst` (a `table`), `:markdown`, `:html`, or `:embed` for a Quarto (or
 other Pandoc) document: an [`Embedded`](@ref) that a code cell shows as the
 HTML table in a web page, the booktabs table in a LaTeX PDF and the Typst
-table in a Typst PDF. With a `path`, the table is written to that file and
+table in a Typst PDF, shrunk to the text width in the PDFs if it is wider.
+With a `path`, the table is written to that file and
 the extension picks the format (`.tex`, `.typ`, `.md`, `.html`); the path is
 returned.
 
@@ -99,7 +100,7 @@ below 0.005 in magnitude switches to scientific notation, as in the REPL.
 function summary_table(fit::Union{BrmsFit,BrmsMVFit}; format::Symbol=:latex, prob::Real=0.95,
                        digits::Integer=2, diagnostics::Bool=true)
     format === :embed &&
-        return Embedded((summary_table(fit; format=f, prob, digits, diagnostics) for f in (:html, :latex, :typst))...)
+        return _embed_table((summary_table(fit; format=f, prob, digits, diagnostics) for f in (:html, :latex, :typst))...)
     _check_format(format)
     blocks = _table_blocks(fit)
     labels = reduce(vcat, (b[4] for b in blocks); init=String[])
@@ -134,7 +135,7 @@ per prior with its brms-syntax distribution, `class`, `coef`, `group`,
 [`summary_table`](@ref).
 """
 function prior_table(info::ModelInfo; format::Symbol=:latex)
-    format === :embed && return Embedded((prior_table(info; format=f) for f in (:html, :latex, :typst))...)
+    format === :embed && return _embed_table((prior_table(info; format=f) for f in (:html, :latex, :typst))...)
     _check_format(format)
     ps = info.priors
     cols = ["Prior", "Class", "Coef", "Group", "Dpar", "Source"]
@@ -148,6 +149,37 @@ end
 prior_table(fit::BrmsFit; kwargs...) = prior_table(fit.info; kwargs...)
 prior_table(path::AbstractString, x::Union{BrmsFit,ModelInfo}; kwargs...) =
     _write_table(path, prior_table(x; format=_table_format(path), kwargs...))
+
+# A table for a Quarto document, adjusted for how Quarto treats raw blocks:
+# - Quarto parses an HTML table, even in a raw `{=html}` block, into a native
+#   table and typesets it in EVERY output format, so a PDF would show it as
+#   well as the LaTeX or Typst table. `data-quarto-disable-processing` leaves
+#   it raw, so only the web page shows it.
+# - A summary with diagnostics has eight columns, a little wider than a
+#   default page; the PDFs shrink a table that is wider than the text to fit
+#   (never enlarge one). LaTeX needs graphicx for that (tikz and Quarto load
+#   it); without it the table is left as it is.
+function _embed_table(html, latex, typst)
+    html = replace(html, "<table" => "<table data-quarto-disable-processing=\"true\""; count=1)
+    latex = """
+        \\begingroup
+        \\ifdefined\\resizebox\\def\\pbrfit#1{\\resizebox{\\ifdim\\width>\\linewidth\\linewidth\\else\\width\\fi}{!}{#1}}\\else\\def\\pbrfit#1{#1}\\fi
+        \\pbrfit{%
+        $(chomp(latex))%
+        }
+        \\endgroup
+        """
+    typst = """
+        #layout(size => {
+          let t = [
+        $(chomp(typst))
+          ]
+          let w = measure(t).width
+          if w > size.width { scale(size.width / w * 100%, reflow: true, t) } else { t }
+        })
+        """
+    return Embedded(html, latex, typst)
+end
 
 function _write_table(path, s)
     write(path, s)
