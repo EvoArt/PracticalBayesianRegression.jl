@@ -27,6 +27,7 @@ makedocs(
             "A first model" => "tutorials/first_model.md",
             "A multilevel model" => "tutorials/multilevel.md",
             "A distributional model" => "tutorials/distributional.md",
+            "A report with Quarto" => "tutorials/report.md",
         ],
         "How-to guides" => [
             "Coming from brms" => "howto/from_brms.md",
@@ -44,6 +45,7 @@ makedocs(
             "Use approximate inference" => "howto/approximate.md",
             "Choose sampler settings" => "howto/sampler.md",
             "Plot a fit" => "howto/plotting.md",
+            "Put results in a LaTeX or Typst document" => "howto/documents.md",
             "Generate Turing or PracticalBayes code" => "howto/codegen.md",
             "Build a model binary" => "howto/binaries.md",
         ],
