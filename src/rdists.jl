@@ -24,6 +24,19 @@ function _qbisect(F, p; lo=-1.0, hi=1.0)
 end
 _qp(p, lower_tail, log_p) = (q = log_p ? exp(p) : p; lower_tail ? q : 1 - q)
 
+# R documents a distribution's d/p/q/r functions on one help page. Here each
+# p/q/r (or second) function gets its own short docstring, its signature taken
+# from the first function's docstring plus a link to it, so the manual lists
+# every name once without repeating the description four times.
+function _dist_alias_doc(f::Symbol, d::Symbol)
+    md = Base.Docs.meta(@__MODULE__)[Base.Docs.Binding(@__MODULE__, d)]
+    raw = join(string.(first(values(md.docs)).text))
+    m = match(Regex("\\b" * string(f) * "\\([^()]*\\)"), raw)
+    sig = m === nothing ? string(f) : m.match
+    return "    " * sig * "\n\nOne of brms's distribution functions: see [`" * string(d) *
+           "`](@ref) for the distribution and its parameters."
+end
+
 # --- student_t(df, mu, sigma) --------------------------------------------------------
 _st(df, mu, sigma) = mu + sigma * _DD.TDist(df)
 """
@@ -39,9 +52,9 @@ pstudent_t(q, df, mu=0, sigma=1; lower_tail::Bool=true, log_p::Bool=false) =
     _pout(_DD.logcdf(_st(df, mu, sigma), q), _DD.logccdf(_st(df, mu, sigma), q), lower_tail, log_p)
 qstudent_t(p, df, mu=0, sigma=1; lower_tail::Bool=true, log_p::Bool=false) = _DD.quantile(_st(df, mu, sigma), _qp(p, lower_tail, log_p))
 rstudent_t(df, mu=0, sigma=1; rng=Random.default_rng()) = rand(rng, _st(df, mu, sigma))
-@doc (@doc dstudent_t) pstudent_t
-@doc (@doc dstudent_t) qstudent_t
-@doc (@doc dstudent_t) rstudent_t
+@doc _dist_alias_doc(:pstudent_t, :dstudent_t) pstudent_t
+@doc _dist_alias_doc(:qstudent_t, :dstudent_t) qstudent_t
+@doc _dist_alias_doc(:rstudent_t, :dstudent_t) rstudent_t
 
 # --- skew_normal (brms: mean mu, sd sigma, skewness alpha) ---------------------------
 const _snfam = SkewNormal{IdentityLink}()
@@ -61,9 +74,9 @@ pskew_normal(q, mu=0, sigma=1, alpha=0; lower_tail::Bool=true, log_p::Bool=false
 qskew_normal(p, mu=0, sigma=1, alpha=0; lower_tail::Bool=true, log_p::Bool=false) =
     _qbisect(v -> pskew_normal(v, mu, sigma, alpha), _qp(p, lower_tail, log_p); lo=mu - 10sigma, hi=mu + 10sigma)
 rskew_normal(mu=0, sigma=1, alpha=0; rng=Random.default_rng()) = _rand(rng, _snfam, _sneta(mu, sigma, alpha), 0)
-@doc (@doc dskew_normal) pskew_normal
-@doc (@doc dskew_normal) qskew_normal
-@doc (@doc dskew_normal) rskew_normal
+@doc _dist_alias_doc(:pskew_normal, :dskew_normal) pskew_normal
+@doc _dist_alias_doc(:qskew_normal, :dskew_normal) qskew_normal
+@doc _dist_alias_doc(:rskew_normal, :dskew_normal) rskew_normal
 
 # --- exgaussian (brms: mean mu, sigma, beta = exponential scale) --------------------
 const _exgfam = ExGaussian{IdentityLink}()
@@ -80,8 +93,8 @@ dexgaussian(x, mu, sigma, beta; log::Bool=false) = _dout(_ll(_exgfam, x, 0.0, _e
 pexgaussian(q, mu, sigma, beta; lower_tail::Bool=true, log_p::Bool=false) =
     _pout(_cc_lcdf(_exgfam, q, _exgeta(mu, sigma, beta)), _cc_lccdf(_exgfam, q, _exgeta(mu, sigma, beta)), lower_tail, log_p)
 rexgaussian(mu, sigma, beta; rng=Random.default_rng()) = _rand(rng, _exgfam, _exgeta(mu, sigma, beta), 0)
-@doc (@doc dexgaussian) pexgaussian
-@doc (@doc dexgaussian) rexgaussian
+@doc _dist_alias_doc(:pexgaussian, :dexgaussian) pexgaussian
+@doc _dist_alias_doc(:rexgaussian, :dexgaussian) rexgaussian
 
 # --- frechet(loc, scale, shape) --------------------------------------------------------
 _fr(loc, scale, shape) = loc + _DD.Frechet(shape, scale)
@@ -98,9 +111,9 @@ pfrechet(q, loc=0, scale=1, shape=1; lower_tail::Bool=true, log_p::Bool=false) =
     _pout(_DD.logcdf(_fr(loc, scale, shape), q), _DD.logccdf(_fr(loc, scale, shape), q), lower_tail, log_p)
 qfrechet(p, loc=0, scale=1, shape=1; lower_tail::Bool=true, log_p::Bool=false) = _DD.quantile(_fr(loc, scale, shape), _qp(p, lower_tail, log_p))
 rfrechet(loc=0, scale=1, shape=1; rng=Random.default_rng()) = rand(rng, _fr(loc, scale, shape))
-@doc (@doc dfrechet) pfrechet
-@doc (@doc dfrechet) qfrechet
-@doc (@doc dfrechet) rfrechet
+@doc _dist_alias_doc(:pfrechet, :dfrechet) pfrechet
+@doc _dist_alias_doc(:qfrechet, :dfrechet) qfrechet
+@doc _dist_alias_doc(:rfrechet, :dfrechet) rfrechet
 
 # --- gen_extreme_value(mu, sigma, xi) ---------------------------------------------------
 _gev(mu, sigma, xi) = _DD.GeneralizedExtremeValue(mu, sigma, xi)
@@ -117,9 +130,9 @@ pgen_extreme_value(q, mu=0, sigma=1, xi=0; lower_tail::Bool=true, log_p::Bool=fa
     _pout(_DD.logcdf(_gev(mu, sigma, xi), q), _DD.logccdf(_gev(mu, sigma, xi), q), lower_tail, log_p)
 qgen_extreme_value(p, mu=0, sigma=1, xi=0; lower_tail::Bool=true, log_p::Bool=false) = _DD.quantile(_gev(mu, sigma, xi), _qp(p, lower_tail, log_p))
 rgen_extreme_value(mu=0, sigma=1, xi=0; rng=Random.default_rng()) = rand(rng, _gev(mu, sigma, xi))
-@doc (@doc dgen_extreme_value) pgen_extreme_value
-@doc (@doc dgen_extreme_value) qgen_extreme_value
-@doc (@doc dgen_extreme_value) rgen_extreme_value
+@doc _dist_alias_doc(:pgen_extreme_value, :dgen_extreme_value) pgen_extreme_value
+@doc _dist_alias_doc(:qgen_extreme_value, :dgen_extreme_value) qgen_extreme_value
+@doc _dist_alias_doc(:rgen_extreme_value, :dgen_extreme_value) rgen_extreme_value
 
 # --- inverse gaussian(mu, shape) --------------------------------------------------------
 """
@@ -133,8 +146,8 @@ dinv_gaussian(x, mu=1, shape=1; log::Bool=false) = _dout(_DD.logpdf(_DD.InverseG
 pinv_gaussian(q, mu=1, shape=1; lower_tail::Bool=true, log_p::Bool=false) =
     _pout(_DD.logcdf(_DD.InverseGaussian(mu, shape), q), _DD.logccdf(_DD.InverseGaussian(mu, shape), q), lower_tail, log_p)
 rinv_gaussian(mu=1, shape=1; rng=Random.default_rng()) = rand(rng, _DD.InverseGaussian(mu, shape))
-@doc (@doc dinv_gaussian) pinv_gaussian
-@doc (@doc dinv_gaussian) rinv_gaussian
+@doc _dist_alias_doc(:pinv_gaussian, :dinv_gaussian) pinv_gaussian
+@doc _dist_alias_doc(:rinv_gaussian, :dinv_gaussian) rinv_gaussian
 
 # --- shifted lognormal(meanlog, sdlog, shift) -------------------------------------------
 _sln(meanlog, sdlog, shift) = shift + _DD.LogNormal(meanlog, sdlog)
@@ -152,9 +165,9 @@ pshifted_lnorm(q, meanlog=0, sdlog=1, shift=0; lower_tail::Bool=true, log_p::Boo
 qshifted_lnorm(p, meanlog=0, sdlog=1, shift=0; lower_tail::Bool=true, log_p::Bool=false) =
     _DD.quantile(_sln(meanlog, sdlog, shift), _qp(p, lower_tail, log_p))
 rshifted_lnorm(meanlog=0, sdlog=1, shift=0; rng=Random.default_rng()) = rand(rng, _sln(meanlog, sdlog, shift))
-@doc (@doc dshifted_lnorm) pshifted_lnorm
-@doc (@doc dshifted_lnorm) qshifted_lnorm
-@doc (@doc dshifted_lnorm) rshifted_lnorm
+@doc _dist_alias_doc(:pshifted_lnorm, :dshifted_lnorm) pshifted_lnorm
+@doc _dist_alias_doc(:qshifted_lnorm, :dshifted_lnorm) qshifted_lnorm
+@doc _dist_alias_doc(:rshifted_lnorm, :dshifted_lnorm) rshifted_lnorm
 
 # --- asymmetric laplace(mu, sigma, quantile) ----------------------------------------------
 const _alfam = AsymLaplace{IdentityLink}()
@@ -175,9 +188,9 @@ function qasym_laplace(p, mu=0, sigma=1, quantile=0.5; lower_tail::Bool=true, lo
     return u < q ? mu + sigma / (1 - q) * Base.log(u / q) : mu - sigma / q * Base.log((1 - u) / (1 - q))
 end
 rasym_laplace(mu=0, sigma=1, quantile=0.5; rng=Random.default_rng()) = _rand(rng, _alfam, _aleta(mu, sigma, quantile), 0)
-@doc (@doc dasym_laplace) pasym_laplace
-@doc (@doc dasym_laplace) qasym_laplace
-@doc (@doc dasym_laplace) rasym_laplace
+@doc _dist_alias_doc(:pasym_laplace, :dasym_laplace) pasym_laplace
+@doc _dist_alias_doc(:qasym_laplace, :dasym_laplace) qasym_laplace
+@doc _dist_alias_doc(:rasym_laplace, :dasym_laplace) rasym_laplace
 
 # --- von mises(mu, kappa) ------------------------------------------------------------------
 """
@@ -194,8 +207,8 @@ function pvon_mises(q, mu, kappa; lower_tail::Bool=true, log_p::Bool=false)
     return _pout(Base.log(F), Base.log1p(-F), lower_tail, log_p)
 end
 rvon_mises(mu, kappa; rng=Random.default_rng()) = rand(rng, _DD.VonMises(mu, kappa))
-@doc (@doc dvon_mises) pvon_mises
-@doc (@doc dvon_mises) rvon_mises
+@doc _dist_alias_doc(:pvon_mises, :dvon_mises) pvon_mises
+@doc _dist_alias_doc(:rvon_mises, :dvon_mises) rvon_mises
 
 # --- beta_binomial(size, mu, phi) ------------------------------------------------------------
 _bb(size, mu, phi) = _DD.BetaBinomial(size, mu * phi, (1 - mu) * phi)
@@ -210,8 +223,8 @@ dbeta_binomial(x, size, mu, phi; log::Bool=false) = _dout(_DD.logpdf(_bb(size, m
 pbeta_binomial(q, size, mu, phi; lower_tail::Bool=true, log_p::Bool=false) =
     _pout(_DD.logcdf(_bb(size, mu, phi), q), _DD.logccdf(_bb(size, mu, phi), q), lower_tail, log_p)
 rbeta_binomial(size, mu, phi; rng=Random.default_rng()) = rand(rng, _bb(size, mu, phi))
-@doc (@doc dbeta_binomial) pbeta_binomial
-@doc (@doc dbeta_binomial) rbeta_binomial
+@doc _dist_alias_doc(:pbeta_binomial, :dbeta_binomial) pbeta_binomial
+@doc _dist_alias_doc(:rbeta_binomial, :dbeta_binomial) rbeta_binomial
 
 # --- zero-inflated and hurdle distributions -------------------------------------------------
 # zero-inflated: P(0) = zi + (1 - zi) P_base(0); hurdle: P(0) = hu, else (1 - hu) P_base(x) / (1 - P_base(0))
@@ -260,7 +273,7 @@ pzero_inflated_beta(q, shape1, shape2, zi; lower_tail::Bool=true, log_p::Bool=fa
 for f in (:pzero_inflated_poisson, :dzero_inflated_negbinomial, :pzero_inflated_negbinomial, :dzero_inflated_binomial,
           :pzero_inflated_binomial, :dzero_inflated_beta_binomial, :pzero_inflated_beta_binomial, :dzero_inflated_beta,
           :pzero_inflated_beta)
-    @eval @doc (@doc dzero_inflated_poisson) $f
+    @eval @doc _dist_alias_doc($(QuoteNode(f)), :dzero_inflated_poisson) $f
 end
 
 """
@@ -286,7 +299,7 @@ phurdle_lognormal(q, mu, sigma, hu; lower_tail::Bool=true, log_p::Bool=false) =
     _pq(_hu_cdf(_DD.LogNormal(mu, sigma), hu, q; discrete=false), lower_tail, log_p)
 for f in (:phurdle_poisson, :dhurdle_negbinomial, :phurdle_negbinomial, :dhurdle_gamma, :phurdle_gamma,
           :dhurdle_lognormal, :phurdle_lognormal)
-    @eval @doc (@doc dhurdle_poisson) $f
+    @eval @doc _dist_alias_doc($(QuoteNode(f)), :dhurdle_poisson) $f
 end
 
 # --- multivariate --------------------------------------------------------------------------
@@ -316,7 +329,7 @@ function rlogistic_normal(mu, Sigma; refcat::Int=1, rng=Random.default_rng())
     return e ./ sum(e)
 end
 for f in (:rdirichlet, :dmulti_normal, :rmulti_normal, :dmulti_student_t, :rmulti_student_t, :dlogistic_normal, :rlogistic_normal)
-    @eval @doc (@doc ddirichlet) $f
+    @eval @doc _dist_alias_doc($(QuoteNode(f)), :ddirichlet) $f
 end
 
 # --- wiener (alpha boundary separation, tau non-decision time, beta bias, delta drift) ----------
@@ -339,4 +352,4 @@ function rwiener(alpha, tau, beta, delta; rng=Random.default_rng(), dt=1e-4)
     end
     return (q=tau + s, resp=x >= alpha ? 1 : 0)
 end
-@doc (@doc dwiener) rwiener
+@doc _dist_alias_doc(:rwiener, :dwiener) rwiener

@@ -1,17 +1,16 @@
 # =============================================================================
-# Plotting front: generic functions whose methods live in the package
-# extensions (ext/), plus the backend-independent data they draw.
+# Plotting front: generic functions with one method per backend, plus the
+# backend-independent data they draw.
 #
+#   always available (PracticalBayesPlot)    ->  SVG figures, no extra install
 #   Makie loaded (CairoMakie, GLMakie, ...)  ->  publication figures
 #   PlotlyLight loaded                       ->  interactive HTML, light install
 #   UnicodePlots loaded                      ->  quick looks in the REPL
 #   InferenceObjects loaded                  ->  `to_inferencedata` for ArviZ
 #
-# `backend = :makie | :plotly | :unicode` picks one when several are loaded;
-# otherwise the loaded one is used, Makie first (a user who paid for it wants
-# its figures). PlotlyLight is the one to recommend to new users: a similar
-# time to the first plot as Makie, but much smaller to install and faster to
-# load.
+# `backend = :makie | :plotly | :unicode | :pbp` picks one; otherwise a loaded
+# extension is used, Makie first (a user who paid for it wants its figures),
+# and PracticalBayesPlot (plots_pbp.jl), a dependency, when none is loaded.
 # =============================================================================
 
 """
@@ -19,10 +18,13 @@
 
 Posterior predictive check, as brms's `pp_check` (bayesplot's `ppc_*`):
 `type` is `:dens_overlay` (default), `:hist`, `:ecdf_overlay`, `:stat`
-(`stat=mean` by default) or `:bars` (discrete responses). Needs a plotting
-extension: load PlotlyLight (lightest install, interactive HTML), Makie
-(e.g. `using CairoMakie`, for static publication figures) or UnicodePlots
-(terminal).
+(`stat=mean` by default) or `:bars` (discrete responses).
+
+Draws with PracticalBayesPlot (an SVG figure, shown inline in VS Code,
+Jupyter and Pluto) unless a plotting package is loaded: Makie (e.g.
+`using CairoMakie`, for static publication figures), PlotlyLight
+(interactive HTML) or UnicodePlots (terminal). `backend` picks one of
+`:pbp`, `:makie`, `:plotly` or `:unicode`.
 """
 pp_check(fit::BrmsFit; backend=nothing, kwargs...) = _pp_check(Val(_pick_backend(backend)), fit; kwargs...)
 
@@ -31,7 +33,7 @@ pp_check(fit::BrmsFit; backend=nothing, kwargs...) = _pp_check(Val(_pick_backend
     plot_effects(fit, effect; kwargs...)
 
 Plot a [`conditional_effects`](@ref) result (line + credible band, one per
-level of the `by` variable). Needs a plotting extension.
+level of the `by` variable). Backends as for [`pp_check`](@ref).
 """
 plot_effects(ce::NamedTuple; backend=nothing) = _plot_effects(Val(_pick_backend(backend)), ce)
 plot_effects(fit::BrmsFit, effect; backend=nothing, kwargs...) =
@@ -40,7 +42,8 @@ plot_effects(fit::BrmsFit, effect; backend=nothing, kwargs...) =
 """
     trace_plot(fit; variables=first population-level ones, backend=nothing)
 
-Trace plots, one panel per parameter, chains overlaid. Needs a plotting extension.
+Trace plots, one panel per parameter, chains overlaid. Backends as for
+[`pp_check`](@ref).
 """
 trace_plot(fit::BrmsFit; variables=_default_trace_vars(fit), backend=nothing) =
     _trace_plot(Val(_pick_backend(backend)), fit, variables)
@@ -48,12 +51,13 @@ trace_plot(fit::BrmsFit; variables=_default_trace_vars(fit), backend=nothing) =
 """
     residual_plot(fit; backend=nothing)
 
-Posterior-mean residuals against posterior-mean fitted values. Needs a
-plotting extension.
+Posterior-mean residuals against posterior-mean fitted values. Backends as
+for [`pp_check`](@ref).
 """
 residual_plot(fit::BrmsFit; backend=nothing) = _residual_plot(Val(_pick_backend(backend)), fit)
 
-# implemented per backend in the extensions, on Val(:makie) / Val(:unicode)
+# implemented per backend, on Val(:pbp) in plots_pbp.jl and on Val(:makie),
+# Val(:plotly), Val(:unicode) in the extensions
 function _pp_check end
 function _plot_effects end
 function _trace_plot end
@@ -72,25 +76,26 @@ function to_inferencedata end
 # --- backend selection -------------------------------------------------------------
 
 _ext(name) = Base.get_extension(@__MODULE__, name)
+_loaded(ext) = ext === nothing || _ext(ext) !== nothing    # `nothing`: a dependency, always loaded
 
-# Preference order when several backends are loaded and `backend` is not given.
-# Makie first: if a user has paid for it, they asked for publication figures.
+# Preference order when `backend` is not given. Makie first: if a user has paid
+# for it, they asked for publication figures. PracticalBayesPlot, a dependency,
+# is always loaded, so it comes last as the default.
 const _BACKENDS = ((:makie, :PracticalBayesianRegressionMakieExt, "CairoMakie (or another Makie)"),
                    (:plotly, :PracticalBayesianRegressionPlotlyLightExt, "PlotlyLight"),
-                   (:unicode, :PracticalBayesianRegressionUnicodePlotsExt, "UnicodePlots"))
+                   (:unicode, :PracticalBayesianRegressionUnicodePlotsExt, "UnicodePlots"),
+                   (:pbp, nothing, "PracticalBayesPlot"))
 
 function _pick_backend(backend)
     if backend === nothing
         for (name, ext, _) in _BACKENDS
-            _ext(ext) === nothing || return name
+            _loaded(ext) && return name
         end
-        throw(ArgumentError("plotting needs a backend: `using " *
-            join([b[3] for b in _BACKENDS], "`, `using ", "` or `using ") * "`"))
     end
     i = findfirst(b -> b[1] === backend, _BACKENDS)
     i === nothing && throw(ArgumentError("backend must be one of " *
         join([repr(b[1]) for b in _BACKENDS], ", ") * "; got $(repr(backend))"))
-    _ext(_BACKENDS[i][2]) === nothing &&
+    _loaded(_BACKENDS[i][2]) ||
         throw(ArgumentError("backend $(repr(backend)) is not loaded: `using $(_BACKENDS[i][3])`"))
     return backend
 end

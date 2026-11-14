@@ -32,6 +32,9 @@ A model formula is written with [`@bf`](@ref) (bare names) or [`bf`](@ref)
 bf
 @lf
 lf
+nlf
+set_nl
+mvbf
 set_rescor
 set_mecor
 BrmsFormula

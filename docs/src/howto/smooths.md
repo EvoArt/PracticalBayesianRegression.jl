@@ -39,7 +39,7 @@ data:
 ```julia
 cs = conditional_smooths(fit; smooth = "s(x)")
 cs.estimate, cs.lower, cs.upper
-plot_effects(fit, :x)              # the whole predictor along x (needs a plotting package)
+plot_effects(fit, :x)              # the whole predictor along x
 ```
 
 ## Gaussian processes

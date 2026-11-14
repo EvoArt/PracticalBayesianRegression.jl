@@ -47,8 +47,8 @@ Pkg.add("PracticalBayesianRegression")
 ```
 
 Chains run on separate threads; start Julia with `julia -t 4` (or more) to
-use them. Plotting needs one of CairoMakie, PlotlyLight or UnicodePlots, and
-conversion to ArviZ's `InferenceData` needs InferenceObjects.
+use them. Plots are drawn with PracticalBayesPlot, or with CairoMakie,
+PlotlyLight or UnicodePlots when one is loaded, and conversion to ArviZ's `InferenceData` needs InferenceObjects.
 
 ## Where to go next
 

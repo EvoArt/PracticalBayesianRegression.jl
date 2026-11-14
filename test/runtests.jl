@@ -1,5 +1,5 @@
 using PracticalBayesianRegression
-using Test, Random, LinearAlgebra, Statistics
+using Test, Random, LinearAlgebra, Statistics, Printf
 import ForwardDiff, LogDensityProblems, Distributions
 const LDP = LogDensityProblems
 const PG = PracticalBayesianRegression
@@ -17,4 +17,5 @@ include("testdata.jl")
     include("multivariate.jl")
     include("codegen.jl")
     include("recipe.jl")
+    include("plots.jl")
 end
