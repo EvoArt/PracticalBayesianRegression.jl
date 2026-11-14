@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><meta name="referrer" content="no-referrer"/><title>A report with Quarto · PracticalBayesianRegression.jl</title><meta name="title" content="A report with Quarto · PracticalBayesianRegression.jl"/><meta property="og:title" content="A report with Quarto · PracticalBayesianRegression.jl"/><meta property="twitter:title" content="A report with Quarto · PracticalBayesianRegression.jl"/><meta name="description" content="Documentation for PracticalBayesianRegression.jl."/><meta property="og:description" content="Documentation for PracticalBayesianRegression.jl."/><meta property="twitter:description" content="Documentation for PracticalBayesianRegression.jl."/><meta property="og:url" content="https://EvoArt.github.io/PracticalBayesianRegression.jl/tutorials/report/"/><meta property="twitter:url" content="https://EvoArt.github.io/PracticalBayesianRegression.jl/tutorials/report/"/><link rel="canonical" href="https://EvoArt.github.io/PracticalBayesianRegression.jl/tutorials/report/"/><script data-outdated-warner src="../../assets/warner.js"></script><link href="https://cdnjs.cloudflare.com/ajax/libs/lato-font/3.0.0/css/lato-font.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/juliamono/0.63.2/juliamono.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/fontawesome.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/solid.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/brands.min.css" rel="stylesheet" type="text/css"/><link href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.8/katex.min.css" rel="stylesheet" type="text/css"/><script>documenterBaseURL="../.."</script><script src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.6/require.min.js" data-main="../../assets/documenter.js"></script><script src="../../search_index.js"></script><script src="../../siteinfo.js"></script><script src="../../../versions.js"></script><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-mocha.css" data-theme-name="catppuccin-mocha"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-macchiato.css" data-theme-name="catppuccin-macchiato"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-frappe.css" data-theme-name="catppuccin-frappe"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/catppuccin-latte.css" data-theme-name="catppuccin-latte"/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-dark.css" data-theme-name="documenter-dark" data-theme-primary-dark/><link class="docs-theme-link" rel="stylesheet" type="text/css" href="../../assets/themes/documenter-light.css" data-theme-name="documenter-light" data-theme-primary/><script src="../../assets/themeswap.js"></script></head><body><div id="documenter"><nav class="docs-sidebar"><div class="docs-package-name"><span class="docs-autofit"><a href="../../">PracticalBayesianRegression.jl</a></span></div><button class="docs-search-query input is-rounded is-small is-clickable my-2 mx-auto py-1 px-2" id="documenter-search-query">Search docs (Ctrl + /)</button><ul class="docs-menu"><li><a class="tocitem" href="../../">Home</a></li><li><span class="tocitem">Tutorials</span><ul><li><a class="tocitem" href="../first_model/">A first model</a></li><li><a class="tocitem" href="../multilevel/">A multilevel model</a></li><li><a class="tocitem" href="../distributional/">A distributional model</a></li><li class="is-active"><a class="tocitem" href>A report with Quarto</a><ul class="internal"><li><a class="tocitem" href="#The-analysis"><span>The analysis</span></a></li><li><a class="tocitem" href="#The-report"><span>The report</span></a></li><li><a class="tocitem" href="#Rendering"><span>Rendering</span></a></li><li><a class="tocitem" href="#Next-steps"><span>Next steps</span></a></li></ul></li></ul></li><li><span class="tocitem">How-to guides</span><ul><li><a class="tocitem" href="../../howto/from_brms/">Coming from brms</a></li><li><a class="tocitem" href="../../howto/priors/">Set priors</a></li><li><a class="tocitem" href="../../howto/families/">Choose a family and link</a></li><li><a class="tocitem" href="../../howto/ordinal/">Ordinal and categorical responses</a></li><li><a class="tocitem" href="../../howto/censoring/">Censored, truncated and weighted data</a></li><li><a class="tocitem" href="../../howto/smooths/">Smooths and Gaussian processes</a></li><li><a class="tocitem" href="../../howto/nonlinear/">Non-linear models</a></li><li><a class="tocitem" href="../../howto/autocorrelation/">Autocorrelation and spatial terms</a></li><li><a class="tocitem" href="../../howto/missing/">Missing data and measurement error</a></li><li><a class="tocitem" href="../../howto/multivariate/">Multivariate models</a></li><li><a class="tocitem" href="../../howto/predictions/">Predict for new data</a></li><li><a class="tocitem" href="../../howto/comparison/">Compare models</a></li><li><a class="tocitem" href="../../howto/approximate/">Use approximate inference</a></li><li><a class="tocitem" href="../../howto/sampler/">Choose sampler settings</a></li><li><a class="tocitem" href="../../howto/plotting/">Plot a fit</a></li><li><a class="tocitem" href="../../howto/documents/">Put results in a LaTeX or Typst document</a></li><li><a class="tocitem" href="../../howto/codegen/">Generate Turing or PracticalBayes code</a></li><li><a class="tocitem" href="../../howto/binaries/">Build a model binary</a></li></ul></li><li><span class="tocitem">Reference</span><ul><li><a class="tocitem" href="../../reference/formulas/">Formulas</a></li><li><a class="tocitem" href="../../reference/families/">Families</a></li><li><a class="tocitem" href="../../reference/priors/">Priors</a></li><li><a class="tocitem" href="../../reference/fitting/">Fitting</a></li><li><a class="tocitem" href="../../reference/postprocessing/">Posterior summaries and predictions</a></li><li><a class="tocitem" href="../../reference/comparison/">Model comparison</a></li><li><a class="tocitem" href="../../reference/distributions/">Distribution functions</a></li><li><a class="tocitem" href="../../reference/plotting/">Plotting and export</a></li><li><a class="tocitem" href="../../reference/codegen/">Code generation</a></li><li><a class="tocitem" href="../../reference/binaries/">Model binaries</a></li><li><a class="tocitem" href="../../reference/density/">Log density interface</a></li></ul></li><li><span class="tocitem">Explanation</span><ul><li><a class="tocitem" href="../../explanation/design/">Design</a></li><li><a class="tocitem" href="../../explanation/conventions/">How brms&#39;s conventions are followed</a></li></ul></li></ul><div class="docs-version-selector field has-addons"><div class="control"><span class="docs-label button is-static is-size-7">Version</span></div><div class="docs-selector control is-expanded"><div class="select is-fullwidth is-size-7"><select id="documenter-version-selector"></select></div></div></div></nav><div class="docs-main"><header class="docs-navbar"><a class="docs-sidebar-button docs-navbar-link fa-solid fa-bars is-hidden-desktop" id="documenter-sidebar-button" href="#"></a><nav class="breadcrumb"><ul class="is-hidden-mobile"><li><a class="is-disabled">Tutorials</a></li><li class="is-active"><a href>A report with Quarto</a></li></ul><ul class="is-hidden-tablet"><li class="is-active"><a href>A report with Quarto</a></li></ul></nav><div class="docs-right"><a class="docs-navbar-link" href="https://github.com/EvoArt/PracticalBayesianRegression.jl" title="View the repository on GitHub"><span class="docs-icon fa-brands"></span><span class="docs-label is-hidden-touch">GitHub</span></a><a class="docs-navbar-link" href="https://github.com/EvoArt/PracticalBayesianRegression.jl/blob/master/docs/src/tutorials/report.md" title="Edit source on GitHub"><span class="docs-icon fa-solid"></span></a><a class="docs-settings-button docs-navbar-link fa-solid fa-gear" id="documenter-settings-button" href="#" title="Settings"></a><a class="docs-article-toggle-button fa-solid fa-chevron-up" id="documenter-article-toggle-button" href="javascript:;" title="Collapse all docstrings"></a></div></header><article class="content" id="documenter-page"><h1 id="A-report-with-Quarto"><a class="docs-heading-anchor" href="#A-report-with-Quarto">A report with Quarto</a><a id="A-report-with-Quarto-1"></a><a class="docs-heading-anchor-permalink" href="#A-report-with-Quarto" title="Permalink"></a></h1><p>This tutorial writes a short report on a regression model with <a href="https://quarto.org">Quarto</a>: one file holds the text and the Julia code, and Quarto renders it to a web page and to PDFs. The report states the model and its priors, gives the estimates in the text and in a table, and shows the effects and the checks as figures. Every number, table and figure comes from the fit, so the report is rebuilt from the data with one command.</p><p>The figures and tables go into each output in its own form: SVG and HTML tables in the web page; TikZ pictures and booktabs tables in a PDF made with LaTeX; CeTZ drawings and Typst tables in a PDF made with Typst. In the PDFs the figures are typeset with the document, so their text is in the document&#39;s font.</p><p>You need PracticalBayesianRegression and Quarto 1.11 or later (<a href="https://quarto.org/docs/get-started/">download</a>). Quarto runs the Julia code through its <code>julia</code> engine, which it installs on first use, and comes with Typst (0.15 from Quarto 1.11; the CeTZ figures need it). A PDF made with LaTeX also needs a LaTeX installation (<code>quarto install tinytex</code> gives one).</p><h2 id="The-analysis"><a class="docs-heading-anchor" href="#The-analysis">The analysis</a><a id="The-analysis-1"></a><a class="docs-heading-anchor-permalink" href="#The-analysis" title="Permalink"></a></h2><p>We simulate the height of 100 plants, grown under different amounts of light, half of them with fertiliser. The true effects are 0.6 cm per unit of light and 1.5 cm for fertiliser.</p><pre><code class="language-julia hljs">using PracticalBayesianRegression, Random
+
+rng = Xoshiro(7)
+n = 100
+light = round.(10 .* rand(rng, n); digits = 1)
+treatment = rand(rng, [&quot;control&quot;, &quot;fertilised&quot;], n)
+height = 4 .+ 0.6 .* light .+ 1.5 .* (treatment .== &quot;fertilised&quot;) .+ 1.2 .* randn(rng, n)
+plants = (; height, light, treatment)
+
+fit = brm(@bf(height ~ light + treatment), plants; seed = 1)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi"><span class="sgr38_5" style="color:#8a8a8a">  Family  </span><span class="sgr1">gaussian</span>
+<span class="sgr38_5" style="color:#8a8a8a">   Links  </span>mu = identity; sigma = log
+<span class="sgr38_5" style="color:#8a8a8a"> Formula  </span><span class="sgr1">height</span><span class="sgr38_5" style="color:#8a8a8a"> ~ </span>light<span class="sgr38_5" style="color:#8a8a8a"> + </span>treatment
+<span class="sgr38_5" style="color:#8a8a8a">    Data  </span>100 observations
+<span class="sgr38_5" style="color:#8a8a8a">   Draws  </span>4 chains × 2000 iterations <span class="sgr38_5" style="color:#8a8a8a">(warmup 1000, thin 1)</span> → 4000 draws
+<span class="sgr38_5" style="color:#8a8a8a"> Sampler  </span>nuts<span class="sgr38_5" style="color:#8a8a8a"> · 7 ms per chain</span>
+
+<span class="sgr38_5" style="color:#585858">──</span><span class="sgr38_5" style="color:#87d7ff"><span class="sgr1"> Regression Coefficients </span></span><span class="sgr38_5" style="color:#585858">────────────────────────────────────────────────────────────────</span>
+<span class="sgr38_5" style="color:#585858">╭─────────────────────┬───────────────────────────────────────────────────────────────────╮</span>
+<span class="sgr38_5" style="color:#585858">│</span><span class="sgr1">                     </span><span class="sgr38_5" style="color:#585858">│</span><span class="sgr1"> Estimate  Est.Error  l-95% CI  u-95% CI  Rhat  Bulk_ESS  Tail_ESS </span><span class="sgr38_5" style="color:#585858">│</span>
+<span class="sgr38_5" style="color:#585858">├─────────────────────┼───────────────────────────────────────────────────────────────────┤</span>
+<span class="sgr38_5" style="color:#585858">│</span><span class="sgr1">           Intercept </span><span class="sgr38_5" style="color:#585858">│</span>     <span class="sgr1">4.14</span>       0.27      3.61      4.66  1.00      4643      2949 <span class="sgr38_5" style="color:#585858">│</span>
+<span class="sgr38_5" style="color:#585858">│</span><span class="sgr1">               light </span><span class="sgr38_5" style="color:#585858">│</span>     <span class="sgr38_5" style="color:#5fafff"><span class="sgr1">0.56</span></span>       0.04      0.47      0.65  1.00      4430      2987 <span class="sgr38_5" style="color:#585858">│</span>
+<span class="sgr38_5" style="color:#585858">│</span><span class="sgr1"> treatmentfertilised </span><span class="sgr38_5" style="color:#585858">│</span>     <span class="sgr38_5" style="color:#5fafff"><span class="sgr1">1.65</span></span>       0.24      1.18      2.14  1.00      4130      2869 <span class="sgr38_5" style="color:#585858">│</span>
+<span class="sgr38_5" style="color:#585858">╰─────────────────────┴───────────────────────────────────────────────────────────────────╯</span>
+
+<span class="sgr38_5" style="color:#585858">──</span><span class="sgr38_5" style="color:#87d7ff"><span class="sgr1"> Further Distributional Parameters </span></span><span class="sgr38_5" style="color:#585858">────────────────────────────────────────</span>
+<span class="sgr38_5" style="color:#585858">╭───────┬───────────────────────────────────────────────────────────────────╮</span>
+<span class="sgr38_5" style="color:#585858">│</span><span class="sgr1">       </span><span class="sgr38_5" style="color:#585858">│</span><span class="sgr1"> Estimate  Est.Error  l-95% CI  u-95% CI  Rhat  Bulk_ESS  Tail_ESS </span><span class="sgr38_5" style="color:#585858">│</span>
+<span class="sgr38_5" style="color:#585858">├───────┼───────────────────────────────────────────────────────────────────┤</span>
+<span class="sgr38_5" style="color:#585858">│</span><span class="sgr1"> sigma </span><span class="sgr38_5" style="color:#585858">│</span>     <span class="sgr1">1.18</span>       0.08      1.03      1.36  1.00      4311      3139 <span class="sgr38_5" style="color:#585858">│</span>
+<span class="sgr38_5" style="color:#585858">╰───────┴───────────────────────────────────────────────────────────────────╯</span>
+
+ <span class="sgr38_5" style="color:#87d787">✓ </span>Rhat ≤ 1.01<span class="sgr38_5" style="color:#585858">  ·  </span><span class="sgr38_5" style="color:#87d787">✓ </span>ESS ≥ 400<span class="sgr38_5" style="color:#585858">  ·  </span><span class="sgr38_5" style="color:#87d787">✓ </span>no divergences<span class="sgr38_5" style="color:#585858">  ·  </span><span class="sgr38_5" style="color:#87d787">✓ </span>treedepth &lt; 10<span class="sgr38_5" style="color:#585858">  ·  </span><span class="sgr38_5" style="color:#87d787">✓ </span>E-BFMI ≥ 0.3
+</code></pre><p>The report needs four kinds of thing from this fit.</p><p><strong>Tables.</strong> <a href="../../reference/plotting/#PracticalBayesianRegression.summary_table"><code>summary_table</code></a> gives the summary above as a table, and <a href="../../reference/plotting/#PracticalBayesianRegression.prior_table"><code>prior_table</code></a> the priors, which the model took from brms&#39;s defaults and a report should state. With <code>format = :embed</code> each is ready for a Quarto document, in all three forms. Here is the Markdown form, to see what they hold:</p><pre><code class="language-julia hljs">print(summary_table(fit; format = :markdown))</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">|                                       | **Estimate** | **Est.Error** | **l-95% CI** | **u-95% CI** | **Rhat** | **Bulk\_ESS** | **Tail\_ESS** |
+|:--------------------------------------|-------------:|--------------:|-------------:|-------------:|---------:|--------------:|--------------:|
+| **Regression Coefficients**           | ──────────── | ───────────── | ──────────── | ──────────── | ──────── | ───────────── | ───────────── |
+| **Intercept**                         |         4.14 |          0.27 |         3.61 |         4.66 |     1.00 |          4643 |          2949 |
+| **light**                             |         0.56 |          0.04 |         0.47 |         0.65 |     1.00 |          4430 |          2987 |
+| **treatmentfertilised**               |         1.65 |          0.24 |         1.18 |         2.14 |     1.00 |          4130 |          2869 |
+| **Further Distributional Parameters** | ──────────── | ───────────── | ──────────── | ──────────── | ──────── | ───────────── | ───────────── |
+| **sigma**                             |         1.18 |          0.08 |         1.03 |         1.36 |     1.00 |          4311 |          3139 |</code></pre><pre><code class="language-julia hljs">print(prior_table(fit; format = :markdown))</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">| **Prior**               | **Class** | **Coef**            | **Group** | **Dpar** | **Source** |
+|:------------------------|:----------|:--------------------|:----------|:---------|:-----------|
+| student\_t(3, 7.6, 2.5) | Intercept |                     |           |          | default    |
+| (flat)                  | b         | light               |           |          | default    |
+| (flat)                  | b         | treatmentfertilised |           |          | default    |
+| student\_t(3, 0, 2.5)   | sigma     |                     |           |          | default    |</code></pre><p><strong>Figures.</strong> The plotting functions return figures; <a href="../../reference/plotting/#PracticalBayesianRegression.embed"><code>embed</code></a> makes one ready for a Quarto document. (This page loads CairoMakie for other pages, so it passes <code>backend = :pbp</code>; you do not need to.)</p><pre><code class="language-julia hljs">plot_effects(fit, :light =&gt; :treatment; backend = :pbp)</code></pre><img src="9bd81539.svg" alt="Example block output"/><pre><code class="language-julia hljs">pp_check(fit; backend = :pbp)</code></pre><img src="6a314cf2.svg" alt="Example block output"/><p><strong>Numbers for the text</strong> come from <a href="../../reference/postprocessing/#PracticalBayesianRegression.fixef"><code>fixef</code></a> (the coefficients):</p><pre><code class="language-julia hljs">using Printf
+fe = Dict(r.variable =&gt; r for r in fixef(fit))
+f2(x) = @sprintf(&quot;%.2f&quot;, x)
+f2(fe[&quot;light&quot;].estimate), f2(fe[&quot;light&quot;].lower), f2(fe[&quot;light&quot;].upper)</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">(&quot;0.56&quot;, &quot;0.47&quot;, &quot;0.65&quot;)</code></pre><p><strong>Checks</strong>: the convergence diagnostics of every parameter, from <a href="../../reference/postprocessing/#PracticalBayesianRegression.posterior_summary"><code>posterior_summary</code></a>, and the sampler&#39;s divergent transitions, from <a href="../../reference/fitting/#PracticalBayesianRegression.nuts_params"><code>nuts_params</code></a>:</p><pre><code class="language-julia hljs">rows = posterior_summary(fit)
+max_rhat = maximum(r.rhat for r in rows)
+min_ess = minimum(min(r.bulk_ess, r.tail_ess) for r in rows)
+divergent = round(Int, sum(nuts_params(fit)[&quot;divergent__&quot;]))
+f2(max_rhat), round(Int, min_ess), divergent</code></pre><pre class="documenter-example-output"><code class="nohighlight hljs ansi">(&quot;1.00&quot;, 2828, 0)</code></pre><h2 id="The-report"><a class="docs-heading-anchor" href="#The-report">The report</a><a id="The-report-1"></a><a class="docs-heading-anchor-permalink" href="#The-report" title="Permalink"></a></h2><p>Put the following in a file <code>report.qmd</code>. The header asks for three outputs (a web page, a PDF made with Typst and one made with LaTeX, which loads TikZ for the figures) and the <code>julia</code> engine. Code cells are marked <code>{julia}</code>; options at the top of a cell, after <code>#|</code>, label and caption its table or figure, and <code>echo: false</code> in the header hides the code. Inline code, <span>$`{julia} expr`$</span>, puts a value into a sentence.</p><pre><code class="language-markdown hljs">---
+title: &quot;Plant height, light and fertiliser&quot;
+format:
+  html: default
+  typst: default
+  pdf:
+    output-file: report-latex.pdf
+    include-in-header:
+      text: \usepackage{tikz}
+engine: julia
+execute:
+  echo: false
+---
+
+```{julia}
+#| output: false
+using PracticalBayesianRegression, Random, Printf
+
+rng = Xoshiro(7)
+n = 100
+light = round.(10 .* rand(rng, n); digits = 1)
+treatment = rand(rng, [&quot;control&quot;, &quot;fertilised&quot;], n)
+height = 4 .+ 0.6 .* light .+ 1.5 .* (treatment .== &quot;fertilised&quot;) .+ 1.2 .* randn(rng, n)
+plants = (; height, light, treatment)
+
+fit = brm(@bf(height ~ light + treatment), plants; seed = 1)
+
+f2(x) = @sprintf(&quot;%.2f&quot;, x)
+fe = Dict(r.variable =&gt; r for r in fixef(fit))
+rows = posterior_summary(fit)
+```
+
+## Model
+
+We regressed the height (cm) of `{julia} nobs(fit)` plants on light and
+fertiliser treatment with a Gaussian model, `height ~ light + treatment`,
+with the default priors of brms (@tbl-priors). Four chains of
+`{julia} fit.iter` iterations, the first `{julia} fit.warmup` of them
+warm-up, gave `{julia} ndraws(fit)` draws from the posterior.
+
+```{julia}
+#| label: tbl-priors
+#| tbl-cap: &quot;Priors.&quot;
+prior_table(fit; format = :embed)
+```
+
+## Results
+
+Height increased by `{julia} f2(fe[&quot;light&quot;].estimate)` cm per unit of
+light (95% credible interval `{julia} f2(fe[&quot;light&quot;].lower)` to
+`{julia} f2(fe[&quot;light&quot;].upper)`), and fertilised plants were
+`{julia} f2(fe[&quot;treatmentfertilised&quot;].estimate)` cm taller
+(`{julia} f2(fe[&quot;treatmentfertilised&quot;].lower)` to
+`{julia} f2(fe[&quot;treatmentfertilised&quot;].upper)`; @tbl-summary, @fig-effects).
+
+```{julia}
+#| label: tbl-summary
+#| tbl-cap: &quot;Posterior summary: means, standard deviations and 95% credible intervals, with convergence diagnostics.&quot;
+summary_table(fit; format = :embed)
+```
+
+```{julia}
+#| label: fig-effects
+#| fig-cap: &quot;Expected height against light, by treatment, with 95% credible bands.&quot;
+embed(plot_effects(fit, :light =&gt; :treatment))
+```
+
+## Checks
+
+The chains converged (largest $\hat{R}$
+`{julia} f2(maximum(r.rhat for r in rows))`, smallest effective sample size
+`{julia} round(Int, minimum(min(r.bulk_ess, r.tail_ess) for r in rows))`,
+`{julia} round(Int, sum(nuts_params(fit)[&quot;divergent__&quot;]))` divergent
+transitions), and data simulated from the fitted model resemble the
+observed heights (@fig-ppcheck).
+
+```{julia}
+#| label: fig-ppcheck
+#| fig-cap: &quot;Posterior predictive check: the density of the observed heights (dark) and of 50 data sets simulated from the posterior.&quot;
+embed(pp_check(fit))
+```</code></pre><h2 id="Rendering"><a class="docs-heading-anchor" href="#Rendering">Rendering</a><a id="Rendering-1"></a><a class="docs-heading-anchor-permalink" href="#Rendering" title="Permalink"></a></h2><p>In a terminal, in the folder of <code>report.qmd</code>:</p><pre><code class="nohighlight hljs">quarto render report.qmd</code></pre><p>This runs the code once and writes <code>report.html</code>, <code>report.pdf</code> (Typst) and <code>report-latex.pdf</code> (LaTeX); <code>quarto render report.qmd --to typst</code> makes just one of them. <code>quarto preview report.qmd</code> opens the web page and re-renders it whenever the file is saved. The first render starts a Julia process and compiles the package, so it takes longer than the ones after it: Quarto keeps the Julia process running between renders.</p><p>Change the data, the formula or a prior and render again: the text, the tables and the figures all follow.</p><h2 id="Next-steps"><a class="docs-heading-anchor" href="#Next-steps">Next steps</a><a id="Next-steps-1"></a><a class="docs-heading-anchor-permalink" href="#Next-steps" title="Permalink"></a></h2><ul><li>A figure cell without <code>embed</code>, such as <code>pp_check(fit)</code>, also works: it shows the figure as an SVG image in every output, its text in PracticalBayesPlot&#39;s font.</li><li>For a document written directly in LaTeX or Typst, without Quarto, see <a href="../../howto/documents/#Put-results-in-a-LaTeX-or-Typst-document">Put results in a LaTeX or Typst document</a>.</li><li>Other figures: <a href="../../howto/plotting/#Plot-a-fit">Plot a fit</a>.</li></ul></article><nav class="docs-footer"><a class="docs-footer-prevpage" href="../distributional/">« A distributional model</a><a class="docs-footer-nextpage" href="../../howto/from_brms/">Coming from brms »</a><div class="flexbox-break"></div><p class="footer-message">Powered by <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> and the <a href="https://julialang.org/">Julia Programming Language</a>.</p></nav></div><div class="modal" id="documenter-settings"><div class="modal-background"></div><div class="modal-card"><header class="modal-card-head"><p class="modal-card-title">Settings</p><button class="delete"></button></header><section class="modal-card-body"><p><label class="label">Theme</label><div class="select"><select id="documenter-themepicker"><option value="auto">Automatic (OS)</option><option value="documenter-light">documenter-light</option><option value="documenter-dark">documenter-dark</option><option value="catppuccin-latte">catppuccin-latte</option><option value="catppuccin-frappe">catppuccin-frappe</option><option value="catppuccin-macchiato">catppuccin-macchiato</option><option value="catppuccin-mocha">catppuccin-mocha</option></select></div></p><hr/><p>This document was generated with <a href="https://github.com/JuliaDocs/Documenter.jl">Documenter.jl</a> version 1.20.0 on <span class="colophon-date" title="Saturday 14 November 2026 14:18">Saturday 14 November 2026</span>. Using Julia version 1.12.7.</p></section><footer class="modal-card-foot"></footer></div></div></div></body></html>
