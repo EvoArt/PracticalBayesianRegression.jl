@@ -18,7 +18,7 @@ using PracticalBayesianRegression
 
 fit = brm(@bf(count ~ treatment + (1 | site)), data; family = poisson())
 fit                          # summary table
-pp_check(fit)                # posterior predictive check (after `using CairoMakie`)
+pp_check(fit)                # posterior predictive check
 loo(fit)                     # leave-one-out cross-validation
 posterior_predict(fit; newdata = new_sites, allow_new_levels = true)
 ```
@@ -53,8 +53,12 @@ Pkg.add("PracticalBayesianRegression")
 ```
 
 The package needs Julia 1.12 or later. Start Julia with several threads
-(`julia -t 4`) so that chains run in parallel. Plotting needs CairoMakie,
-PlotlyLight or UnicodePlots; `to_inferencedata` needs InferenceObjects.
+(`julia -t 4`) so that chains run in parallel. Plots are drawn with
+[PracticalBayesPlot](https://github.com/EvoArt/PracticalBayesPlot.jl), a dependency
+that loads in milliseconds, as SVG figures that VS Code, Jupyter and Pluto
+show inline and that save as SVG, TikZ (LaTeX) or CeTZ (Typst); with
+CairoMakie, PlotlyLight or UnicodePlots loaded, they are drawn with that
+instead. `to_inferencedata` needs InferenceObjects.
 
 ## Documentation
 

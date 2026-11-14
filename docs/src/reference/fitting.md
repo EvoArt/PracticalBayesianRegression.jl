@@ -23,7 +23,9 @@ combine_fits
 
 ```@docs
 variables(::BrmsFit)
+nvariables
 draws
+as_draws_matrix
 ndraws
 nchains
 niterations

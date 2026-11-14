@@ -27,9 +27,12 @@ import StatsAPI
 using StatsAPI: vcov, nobs        # re-exported (the StatsAPI functions, so no clash with StatsBase)
 import Serialization
 import TOML
+import PracticalBayesPlot as PBP   # the default plotting backend (plots_pbp.jl)
 using PrettyTables: pretty_table, TextHighlighter, TextTableFormat, TextTableStyle, AnsiTextCell,
-                    text_table_borders__unicode_rounded, fmt__printf
+                    text_table_borders__unicode_rounded, fmt__printf,
+                    LatexCell, latex_table_format__booktabs, TypstTableFormat   # report tables (report.jl)
 using Printf: @sprintf
+import Printf
 using Crayons: Crayon
 using SpecialFunctions: loggamma, logabsgamma, digamma, logabsbinomial, logbeta, erfc, erfcx, logerfc, besselix
 using LogExpFunctions: log1pexp, logistic, logit, logaddexp, log1mexp, logsumexp
@@ -70,6 +73,7 @@ include("approx.jl")
 include("mimarg.jl")
 include("multivariate.jl")
 include("summary.jl")
+include("report.jl")        # summary and prior tables as LaTeX, Typst, Markdown, HTML
 include("predict.jl")
 include("postprocess.jl")
 include("averaging.jl")
@@ -80,6 +84,7 @@ include("brmsapi.jl")      # vcov, ngrps, reloo, kfold_predict, make_conditions,
 include("rdists.jl")       # brms's d/p/q/r distribution functions
 include("effects.jl")
 include("plots.jl")
+include("plots_pbp.jl")    # the default plotting backend
 include("codegen.jl")
 include("csvio.jl")       # model binaries: CSV in / draws out
 include("recipe.jl")      # model structure without data; trimmable assembly
@@ -119,12 +124,12 @@ export brm_multiple, combine_fits, model_weights, posterior_average, pp_average
 export posterior_interval, predictive_interval, predictive_error
 export bridge_sampler, bayes_factor, post_prob, posterior_smooths, conditional_smooths
 export GLMDensity, variables, constrain, draws, fresh_workspace, logdensity_and_gradient!
-export posterior_summary, fixef
+export posterior_summary, fixef, summary_table, prior_table
 export posterior_linpred, posterior_epred, posterior_predict, log_lik, residual_draws
 export ranef, group_coef, bayes_R2, loo, waic, loo_compare, LOOResult
 export hypothesis, HypothesisResult, conditional_effects
 export update, kfold, loo_R2, fitted_summary, predict_summary
-export pp_check, pp_check_data, plot_effects, trace_plot, residual_plot, to_inferencedata
+export pp_check, pp_check_data, plot_effects, trace_plot, residual_plot, save_plot, embed, Embedded, to_inferencedata
 export turing_code, pb_code, model_data, turing_model, ModelCode, model_logdensity, model_dimension, FamilyDist, thresholds, log_mixing_weights, residual_correlation
 export build_binary, model_recipe, assemble, read_csv, DataTable, ModelRecipe
 export compile_model, compiled_model, compiled_models, find_compiled_model, remove_compiled_model, model_store

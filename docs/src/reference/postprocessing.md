@@ -9,7 +9,9 @@ CurrentModule = PracticalBayesianRegression
 ```@docs
 posterior_summary
 fixef
+vcov(::BrmsFit)
 ranef
+ngrps
 group_coef
 VarCorr
 posterior_interval
@@ -27,6 +29,7 @@ posterior_epred
 posterior_predict
 posterior_linpred
 log_lik
+logLik
 fitted_summary
 predict_summary
 predictive_interval
@@ -38,6 +41,7 @@ residual_draws
 
 ```@docs
 conditional_effects
+make_conditions
 posterior_smooths
 conditional_smooths
 pp_mixture
