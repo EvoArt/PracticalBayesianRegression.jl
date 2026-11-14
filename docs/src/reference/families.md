@@ -63,6 +63,7 @@ hurdle_poisson
 hurdle_negbinomial
 hurdle_gamma
 hurdle_lognormal
+zero_inflated_asym_laplace
 ```
 
 ## Proportions
@@ -90,6 +91,8 @@ categorical
 ```@docs
 multinomial
 dirichlet()
+dirichlet2
+dirichlet_multinomial
 logistic_normal
 ```
 

@@ -1,0 +1,69 @@
+name: Report
+
+# Builds the documents the report pages describe (tutorials/report.md,
+# howto/documents.md), which the docs build cannot: the pages' Julia code runs
+# there, but compiling the Typst, LaTeX and Quarto documents needs those tools.
+# The outputs are uploaded as an artifact to look at.
+
+on:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'Project.toml'
+      - 'docs/src/tutorials/report.md'
+      - 'docs/src/howto/documents.md'
+      - 'docs/report_check.jl'
+      - '.github/workflows/report.yml'
+  workflow_dispatch:
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1.12'
+
+      - uses: julia-actions/cache@v2
+
+      - uses: quarto-dev/quarto-actions/setup@v2
+        with:
+          version: 1.11.9
+          tinytex: true
+
+      - name: LaTeX packages
+        run: tlmgr install pgf booktabs lm geometry latexmk
+
+      - name: Julia environment
+        run: julia --project=report-env -e 'using Pkg; Pkg.develop(PackageSpec(path=pwd()))'
+
+      - name: Run the pages' code and write the documents
+        run: julia --project=report-env docs/report_check.jl docs/src work
+
+      - name: Typst document
+        working-directory: work/docs/report
+        run: quarto typst compile report.typ
+
+      - name: LaTeX document
+        working-directory: work/docs/report
+        run: latexmk -pdf -interaction=nonstopmode -halt-on-error report.tex
+
+      - name: Quarto report
+        working-directory: work/tut
+        run: |
+          julia --project=. -e 'using Pkg; Pkg.develop(PackageSpec(path=ENV["GITHUB_WORKSPACE"]))'
+          quarto render report.qmd
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: report
+          path: |
+            work/docs/report/*.pdf
+            work/docs/report/*.log
+            work/tut/report.html
+            work/tut/report_files
+            work/tut/*.pdf

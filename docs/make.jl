@@ -56,6 +56,7 @@ makedocs(
             "Fitting" => "reference/fitting.md",
             "Posterior summaries and predictions" => "reference/postprocessing.md",
             "Model comparison" => "reference/comparison.md",
+            "Distribution functions" => "reference/distributions.md",
             "Plotting and export" => "reference/plotting.md",
             "Code generation" => "reference/codegen.md",
             "Model binaries" => "reference/binaries.md",
