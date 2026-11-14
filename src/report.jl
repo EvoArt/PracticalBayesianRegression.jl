@@ -28,11 +28,6 @@ function _check_format(format)
         throw(ArgumentError("format must be one of " * join(repr.(_TABLE_FORMATS), ", ") * "; got $(repr(format))"))
 end
 
-# Typst cells are markup, and PrettyTables escapes only `#`: `b_x` would open
-# an emphasis, `~` is a non-breaking space, `<a>` a label. A backslash makes
-# any of them literal.
-_typst_esc(s) = replace(String(s), r"([\\*_$@<>`~\[\]])" => s"\\\1")
-
 # a number as the document should typeset it: a true minus sign, not a hyphen
 function _tnum(x, digits, tiny, format)
     s = isnan(x) ? "NaN" : Printf.format(Printf.Format(tiny ? "%.$(max(digits - 1, 0))e" : "%.$(digits)f"), x)
@@ -166,13 +161,9 @@ const _TYPST_REPORT_FORMAT = TypstTableFormat(; vertical_line_at_beginning=false
     vertical_lines_at_data_columns=:none, vertical_line_after_data_columns=false,
     vertical_line_after_continuation_column=false)
 
+# PrettyTables (3.5+) escapes all of Typst's markup characters in cell text,
+# so `b_x` is not an emphasis: the text goes in as is.
 function _render_report_table(data, cols, labels, groups, format; alignment=:r)
-    if format === :typst
-        data = map(x -> x isa AbstractString ? _typst_esc(x) : x, data)
-        cols = _typst_esc.(cols)
-        labels = labels === nothing ? nothing : _typst_esc.(labels)
-        groups = groups === nothing ? nothing : [k => _typst_esc(v) for (k, v) in groups]
-    end
     kw = (; column_labels=cols, alignment)
     labels === nothing || (kw = (; kw..., row_labels=labels, row_label_column_alignment=:l))
     groups === nothing || isempty(groups) || (kw = (; kw..., row_group_labels=groups))

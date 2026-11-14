@@ -39,6 +39,8 @@ jobs:
           # TinyTeX is installed but its bin folder is not on PATH
           TT=$(dirname "$(find "$HOME" -name tlmgr -path '*TinyTeX*bin*' | head -1)")
           echo "$TT" >> "$GITHUB_PATH"
+          # an older bundled tlmgr refuses to install until it has updated itself
+          "$TT/tlmgr" update --self
           "$TT/tlmgr" install pgf booktabs lm geometry latexmk
 
       - name: Julia environment

@@ -61,7 +61,7 @@
     @test occursin("l-90% CI", summary_table(fit; format=:markdown, prob=0.9))
     nod = summary_table(fit; format=:markdown, diagnostics=false)
     @test !occursin("Rhat", nod) && occursin("Estimate", nod)
-    pt = prior_table(fit; format=:markdown)
+    pt = prior_table(fit; format=:html)                        # markdown escapes the `_`
     @test occursin("student_t(3", pt) && occursin("default", pt)
     @test occursin(raw"\toprule", prior_table(fit))
     @test_throws ArgumentError summary_table(fit; format=:docx)
