@@ -137,4 +137,7 @@ export CompiledModel, ModelStore, run_compiled, fit_from_draws
 export get_prior, default_prior, validate_prior, PriorTable, VarCorr, loo_predict, loo_epred, loo_linpred
 export pp_mixture, prior_draws, nuts_params, log_posterior, rhat, neff_ratio, ndraws, nchains, niterations
 
+
+include("precompile.jl")    # PrecompileTools workload: common families fit fast in a fresh session
+
 end
