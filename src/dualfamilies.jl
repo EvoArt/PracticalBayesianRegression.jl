@@ -266,25 +266,27 @@ function _rand(rng, f::NegBinomial2, eta, t)
 end
 _check_response(::NegBinomial2, y, t) = _chk(all(v -> isinteger(v) && v >= 0, y), "count responses must be non-negative integers")
 
-# --- com_poisson: Conway-Maxwell-Poisson (brms: mu = rate on the log scale, nu = shape)
-#     log P(y) = y log mu - nu lgamma(y + 1) - log Z(log mu, nu)
-# log Z as brms: the asymptotic expansion when log mu >= log 1.5 and
-# nu log mu >= log 1.5, else the series summed until the remainder bound is
-# below 2^-23 (checked every 50 terms), at most 10000 terms.
+# --- com_poisson: Conway-Maxwell-Poisson as brms: mu is the modal location (log link), nu = shape,
+#     log P(y) = nu (y log mu - lgamma(y + 1)) - log Z(log mu, nu),   Z = Σ_j mu^(nu j) / (j!)^nu
+# (the rate is mu^nu, so mu stays near the mean however large nu is).
+# log Z as brms (dcom_poisson / com_poisson_normalizer): the asymptotic expansion of Gaunt et
+# al. (2019, Eq. A.31) with three corrections when mu nu >= 200 and mu / nu >= 50, else the
+# series summed until the remainder bound is below 2^-23 (checked every 50 terms), at most
+# 10000 terms.
 dpars(::ComPoisson) = (:mu, :shape)
+_cmp_use_approx(lmu, nu) = lmu + log(nu) >= log(200) && lmu - log(nu) >= log(50)
 function _logZ_cmp_approx(lmu, nu)
-    nu2 = nu^2
-    lcommon = log(nu) + lmu / nu
-    lcte = nu * exp(lmu / nu) - ((nu - 1) / (2nu) * lmu + (nu - 1) / 2 * _pv(nu, _LOG_2PI) + log(nu) / 2)
-    c1 = (nu2 - 1) / 24
-    c2 = (nu2 - 1) / 1152 * (nu2 + 23)
-    c3 = (nu2 - 1) / 414720 * (5 * nu2^2 - 298nu2 + 11237)
-    return lcte + log(1 + c1 * exp(-lcommon) + c2 * exp(-2lcommon) + c3 * exp(-3lcommon))
+    mu = exp(lmu)
+    a, b = nu / mu, 1 / (nu * mu)
+    t1 = (a - b) / 24
+    t2 = (a - b) * (a + 23b) / 1152
+    t3 = (a - b) * (5a^2 - 298a * b + 11237b^2) / 414720
+    return nu * mu - (nu - 1) / 2 * (log(_pv(nu, 2π)) + lmu) - log(nu) / 2 + log1p(t1 + t2 + t3)
 end
-_lkterm(lmu, nu, k) = (k - 1) * lmu - nu * loggamma(_pv(lmu, k))
+_lkterm(lmu, nu, k) = nu * ((k - 1) * lmu - loggamma(_pv(lmu, k)))
 function _logZ_cmp(lmu, nu)
     nu == 1 && return exp(lmu)
-    (lmu * nu >= _pv(lmu, log(1.5)) && lmu >= _pv(lmu, log(1.5))) && return _logZ_cmp_approx(lmu, nu)
+    _cmp_use_approx(lmu, nu) && return _logZ_cmp_approx(lmu, nu)
     leps = -23 * log(2)
     acc = _lkterm(lmu, nu, 1)
     prev = acc; k = 1
@@ -306,15 +308,15 @@ end
     nu = exp(eta[2])
     lmu = _logmu(link(f), eta[1])
     isfinite(lmu) || return oftype(lmu * nu, -Inf)
-    return y * lmu - nu * loggamma(y + 1) - _logZ_cmp(lmu, nu)
+    return nu * (y * lmu - loggamma(y + 1)) - _logZ_cmp(lmu, nu)
 end
 function _cmp_pmf(f::ComPoisson, eta; kmax=10_000)
     lmu = Float64(_logmu(link(f), eta[1]))
-    lz = _logZ_cmp(lmu, exp(Float64(eta[2])))
     nu = exp(Float64(eta[2]))
+    lz = _logZ_cmp(lmu, nu)
     ps = Float64[]
     for k in 0:kmax
-        p = exp(k * lmu - nu * loggamma(k + 1) - lz)
+        p = exp(nu * (k * lmu - loggamma(k + 1)) - lz)
         push!(ps, p)
         k > 5 && p < 1e-14 && sum(ps) > 0.999999 && break
     end

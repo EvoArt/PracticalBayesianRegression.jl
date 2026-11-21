@@ -310,14 +310,25 @@
     @testset "com_poisson and hurdle_cumulative" begin
         fc = com_poisson()
         for (e, y) in (((log(2.5), log(0.7)), 3.0), ((log(0.4), log(1.6)), 0.0), ((log(8.0), log(1.3)), 6.0))
-            # normalised: P sums to one (exact series for the reference)
+            # normalised: P sums to one (these cases use the series)
             ps = [exp(PG._ll(fc, Float64(k), 0.0, e)) for k in 0:400]
-            # (brms's asymptotic log Z for larger mu is accurate, not exact)
-            @test sum(ps) ≈ 1 atol = 2e-3          # brms asymptotic log Z: ~1e-3 at mu = 8, nu = 1.3
+            @test sum(ps) ≈ 1 atol = 1e-6
             @test PG._mean(fc, e, 0) ≈ sum(k * ps[k + 1] for k in 0:400) / sum(ps) atol = 1e-6
             _, g = PG._ll_grad(fc, y, 0.0, e)
             @test collect(g) ≈ ForwardDiff.gradient(t -> PG._ll(fc, y, 0.0, Tuple(t)), collect(e)) atol = 1e-8
         end
+        # brms's dcom_poisson: mu is the modal location, the rate mu^nu,
+        # nu (y log mu - lgamma(y + 1)) - log Σ_j exp(nu (j log mu - lgamma(j + 1)))
+        logsum(v) = (m = maximum(v); m + log(sum(exp.(v .- m))))
+        brms_lpmf(y, mu, nu) = nu * (y * log(mu) - PG.loggamma(y + 1)) -
+                               logsum([nu * (j * log(mu) - PG.loggamma(j + 1)) for j in 0:3000])
+        for (mu, nu, y) in ((2.5, 0.7, 3), (0.4, 1.6, 0), (8.0, 1.3, 6), (12.0, 10.0, 11), (12.0, 10.0, 14))
+            @test PG._ll(fc, Float64(y), 0.0, (log(mu), log(nu))) ≈ brms_lpmf(y, mu, nu) atol = 1e-6
+        end
+        # the asymptotic branch (mu nu >= 200 and mu / nu >= 50)
+        @test PG._ll(fc, 290.0, 0.0, (log(300.0), log(2.0))) ≈ brms_lpmf(290, 300.0, 2.0) atol = 1e-6
+        # with a large nu, mu stays near the mean
+        @test PG._mean(fc, (log(12.0), log(10.0)), 0) ≈ 12 atol = 0.5
         # nu = 1 is the Poisson
         @test PG._ll(fc, 3.0, 0.0, (log(2.5), 0.0)) ≈ D.logpdf(D.Poisson(2.5), 3) atol = 1e-10
         fh = hurdle_cumulative()
