@@ -1,7 +1,7 @@
 name = "PracticalBayesianRegression"
 uuid = "3622129f-02c2-4cbe-8b24-efc8a7759a86"
 authors = ["Arthur Newbury <arn203@exeter.ac.uk>"]
-version = "0.2.1"
+version = "0.2.2"
 
 [deps]
 AbstractMCMC = "80f14c24-f653-4e6a-9b94-39d6b0f70001"
