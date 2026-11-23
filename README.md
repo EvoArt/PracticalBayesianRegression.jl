@@ -3,6 +3,7 @@
 [![Docs (stable)](https://img.shields.io/badge/docs-stable-blue.svg)](https://EvoArt.github.io/PracticalBayesianRegression.jl/stable/)
 [![Docs (dev)](https://img.shields.io/badge/docs-dev-blue.svg)](https://EvoArt.github.io/PracticalBayesianRegression.jl/dev/)
 [![CI](https://github.com/EvoArt/PracticalBayesianRegression.jl/actions/workflows/ci.yml/badge.svg)](https://github.com/EvoArt/PracticalBayesianRegression.jl/actions/workflows/ci.yml)
+[![Coverage](https://codecov.io/gh/EvoArt/PracticalBayesianRegression.jl/branch/master/graph/badge.svg)](https://codecov.io/gh/EvoArt/PracticalBayesianRegression.jl)
 
 Bayesian regression models in Julia, written the way R's
 [brms](https://paulbuerkner.com/brms/) writes them. The package covers the
